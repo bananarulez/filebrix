@@ -113,6 +113,7 @@ export function ImageMetadataTool({ mode }: { mode: "view" | "remove" }) {
 
       {mode === "remove" && batchFiles.length > 0 && (
         <ImageBatchList
+          sourceToolSlug="remove-image-metadata"
           files={batchFiles}
           processFile={async (imageFile) => {
             const detected = await detectFileType(imageFile);

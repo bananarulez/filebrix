@@ -237,6 +237,7 @@ export function ImageCropTool({ onResult }: { onResult?: (file: File, blob: Blob
 
       {job && (
         <ImageBatchList
+          sourceToolSlug="crop-image"
           key={`${batchKey([job.file])}-crop-${job.crop.x}-${job.crop.y}-${job.crop.width}-${job.crop.height}`}
           files={[job.file]}
           processFile={async (imageFile) => {

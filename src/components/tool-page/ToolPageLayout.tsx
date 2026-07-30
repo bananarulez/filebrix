@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { ToolDefinition } from "@/registry/types";
 import { getRelatedTools, getToolUrl } from "@/registry";
 import { CATEGORIES } from "@/registry/categories";
+import { getCapabilityForTool, getOwningCategorySlug } from "@/registry/capabilities";
 import { LocalProcessingBadge } from "@/components/tools/LocalProcessingBadge";
 import { ToolInstructions } from "@/components/tools/ToolInstructions";
 import { FAQ } from "@/components/tools/FAQ";
@@ -33,10 +34,24 @@ interface ToolPageLayoutProps {
  */
 export function ToolPageLayout({ tool, children, steps, toolList }: ToolPageLayoutProps) {
   const related = getRelatedTools(tool, toolList);
-  const category = CATEGORIES.find((c) => c.engine === tool.engine);
+  // Ownership via the shared resolver, not a direct CATEGORIES engine match:
+  // Parquet Viewer belongs to Data Studio through STUDIOS[].relatedEngines
+  // and has no CATEGORIES entry of its own, so a one-step lookup silently
+  // dropped its Application crumb entirely.
+  const categorySlug = getOwningCategorySlug(tool);
+  const category = CATEGORIES.find((c) => c.slug === categorySlug);
+  // The Capability level is a real, indexed URL (Home → Application →
+  // Capability → Tool, PROJECT_LOG.md entry 21), so the visible trail should
+  // pass through it. `undefined` means this tool's capability deliberately
+  // has no index page — a Developer Toolkit tool, or a Studio capability
+  // with no standalone tools — and the crumb is then omitted rather than
+  // rendered as a link to a 404. Derived from the same `indexDescription`
+  // signal that decides which capability pages exist at all.
+  const capability = getCapabilityForTool(tool, toolList);
   const breadcrumbItems = [
     { name: "Home", href: "/" },
     ...(category ? [{ name: category.name, href: `/${category.slug}` }] : []),
+    ...(capability ? [{ name: capability.label, href: capability.path }] : []),
     { name: tool.name, href: getToolUrl(tool) },
   ];
 

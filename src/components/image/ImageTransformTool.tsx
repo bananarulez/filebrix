@@ -289,6 +289,7 @@ export function ImageTransformTool({ mode, onResult }: ImageTransformToolProps) 
 
       {job && (
         <ImageBatchList
+          sourceToolSlug={`${mode}-image`}
           key={`${batchKey(job.files)}-${mode}-${job.rotateDegrees}-${job.flipAxis}-${job.width}-${job.height}-${job.lockAspectRatio}-${job.quality}-${job.brightness}-${job.contrast}`}
           files={job.files}
           processFile={(file) =>

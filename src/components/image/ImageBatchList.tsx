@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ProcessingError } from "@/lib/errors/ProcessingError";
 import { sanitizeFilename } from "@/lib/security/filenames";
+import { LazySendToToolLinks } from "@/components/tools/LazySendToToolLinks";
 
 interface BatchEntry {
   key: string;
@@ -21,6 +22,8 @@ interface ImageBatchListProps {
   processFile: (file: File) => Promise<Blob>;
   deriveFilename: (file: File) => string;
   zipFilename?: string;
+  /** Enables the single-result "Send to another tool" panel, and keeps it from offering the producing tool itself. */
+  sourceToolSlug?: string;
 }
 
 let keyCounter = 0;
@@ -92,7 +95,13 @@ function uniqueZipEntryName(rawName: string, usedNames: Set<string>): string {
  * exactly once per batch, with no risk of re-running mid-batch or fighting
  * a dependency array over a new `processFile` closure identity.
  */
-export function ImageBatchList({ files, processFile, deriveFilename, zipFilename = "images.zip" }: ImageBatchListProps) {
+export function ImageBatchList({
+  files,
+  processFile,
+  deriveFilename,
+  zipFilename = "images.zip",
+  sourceToolSlug,
+}: ImageBatchListProps) {
   const [entries, setEntries] = useState<BatchEntry[]>(() => createEntries(files));
   const [zipping, setZipping] = useState(false);
 
@@ -199,6 +208,30 @@ export function ImageBatchList({ files, processFile, deriveFilename, zipFilename
           {zipping ? "Packaging…" : `Download all ${doneCount} as .zip`}
         </button>
       )}
+
+      {/*
+        Chaining is offered for a single result only, and that is a deliberate
+        limit rather than an oversight. `lib/fileHandoff.ts` holds exactly one
+        `{ toolSlug, file }` pair, so handing off a batch would either send
+        just the first item — silently losing the rest, the worst outcome —
+        or require the handoff itself to become a list, which then needs every
+        consuming `FileDropZone`/`toolSlug` claim site to accept multiple
+        files and decide what a multi-file arrival means for tools that take
+        exactly one. That is a real feature, not a tweak; until then, a batch
+        of N keeps its per-file Download buttons and the .zip.
+      */}
+      {doneCount === 1 &&
+        (() => {
+          const only = entries.find((e) => e.status === "done" && e.blob && e.outputFilename);
+          if (!only) return null;
+          return (
+            <LazySendToToolLinks
+              filename={only.outputFilename!}
+              blob={only.blob!}
+              excludeToolSlug={sourceToolSlug}
+            />
+          );
+        })()}
     </div>
   );
 }

@@ -30,6 +30,49 @@ export function getToolCapability(tool: ToolDefinition): AppMode | undefined {
   return tool.appEntry?.mode ?? tool.capability;
 }
 
+/**
+ * The category slug of the Application that owns a tool, resolved the way
+ * ownership actually works rather than by a single lookup.
+ *
+ * `STUDIOS[].relatedEngines` is checked first because it's the one place a
+ * Studio's ownership spans more than one engine: Parquet Viewer
+ * (`engine: "parquet"`) belongs to Data Studio this way, and no `CATEGORIES`
+ * entry has `engine: "parquet"` at all. The `CATEGORIES` fallback covers
+ * `engine: "developer"`, which isn't a Studio.
+ *
+ * `registry/search.ts` needed exactly this lookup first and had a private
+ * copy; both now share this one, so a future Application spanning two
+ * engines can't be right in search and wrong in breadcrumbs.
+ */
+export function getOwningCategorySlug(tool: ToolDefinition): string | undefined {
+  const studio = STUDIOS.find((s) => s.relatedEngines.includes(tool.engine));
+  return studio?.categorySlug ?? CATEGORIES.find((c) => c.engine === tool.engine)?.slug;
+}
+
+/**
+ * The capability index page a tool belongs under, or `undefined` when it has
+ * none — either because the tool has no capability at all (every Developer
+ * Toolkit tool, which uses `devCategory` instead) or because its capability
+ * deliberately has no index page.
+ *
+ * Callers must treat `undefined` as "render no capability link", never as an
+ * error: a capability with no `indexDescription`, or with zero standalone
+ * tools, is intentionally page-less (thin content — see `toConfig` above),
+ * and linking to one would be a 404.
+ */
+export function getCapabilityForTool(
+  tool: ToolDefinition,
+  toolList: ToolDefinition[] = allTools
+): CapabilityConfig | undefined {
+  const capability = getToolCapability(tool);
+  if (!capability) return undefined;
+  const categorySlug = getOwningCategorySlug(tool);
+  if (!categorySlug) return undefined;
+  return getAllCapabilities(toolList).find(
+    (c) => c.categorySlug === categorySlug && c.id === capability
+  );
+}
+
 /** Every tool belonging to one Application capability, in registry order. */
 export function getToolsByCapability(
   categorySlug: StudioCategorySlug,

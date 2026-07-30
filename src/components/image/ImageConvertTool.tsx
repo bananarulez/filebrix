@@ -118,6 +118,7 @@ export function ImageConvertTool({ sourceFormat, targetFormat }: ImageConvertToo
 
       {job && (
         <ImageBatchList
+          sourceToolSlug={`${sourceFormat}-to-${targetFormat}`}
           key={`${batchKey(job.files)}-${targetFormat}-${job.quality}-${job.backgroundColor}`}
           files={job.files}
           processFile={(file) =>

@@ -139,7 +139,12 @@ export function PdfToImagesTool() {
       {progress && <ProcessingProgress percent={progress.percent} message={progress.message} />}
       {state.status === "error" && <ErrorPanel message={state.message} code={state.code} />}
       {result && (
-        <DownloadResult filename={result.filename} blob={result.blob} label={`Download ${result.filename}`} />
+        <DownloadResult
+          filename={result.filename}
+          blob={result.blob}
+          label={`Download ${result.filename}`}
+          sourceToolSlug="pdf-to-images"
+        />
       )}
     </div>
   );

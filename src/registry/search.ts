@@ -1,7 +1,7 @@
 import { tools as allTools, searchTools } from "./index";
 import { getAppNavItems, type AppNavItem } from "./navigation";
+import { getOwningCategorySlug } from "./capabilities";
 import { STUDIOS } from "./studios";
-import { CATEGORIES } from "./categories";
 import { FILE_FORMAT_LABELS } from "@/lib/detect/formatLabels";
 import type { ToolDefinition } from "./types";
 
@@ -29,16 +29,12 @@ function toAppResult(item: AppNavItem): AppSearchResult {
  * by name, and this resolves that to Image Studio even though "Resize"
  * isn't one of Image Studio's own top-level capability labels (it's a
  * sub-action inside the Edit tab's own action picker, one level deeper
- * than `registry/studios.ts` tracks). Checks `STUDIOS[].relatedEngines`
- * first (the same list `StudioLayout` uses for "related actions"), since
- * that's the one place a Studio's ownership can span more than one engine
- * — Parquet Viewer (`engine: "parquet"`) belongs to Data Studio this way,
- * not via a direct `CATEGORIES` engine match. Falls back to `CATEGORIES`
- * directly for `engine: "developer"`, which isn't a Studio at all.
+ * than `registry/studios.ts` tracks). The engine-to-Application resolution
+ * itself lives in `getOwningCategorySlug` (registry/capabilities.ts), shared
+ * with the tool-page breadcrumbs so the two can't disagree.
  */
 function findOwningApp(tool: ToolDefinition, appNavItems: AppNavItem[]): AppNavItem | undefined {
-  const studio = STUDIOS.find((s) => s.relatedEngines.includes(tool.engine));
-  const slug = studio?.categorySlug ?? CATEGORIES.find((c) => c.engine === tool.engine)?.slug;
+  const slug = getOwningCategorySlug(tool);
   return appNavItems.find((item) => item.slug === slug);
 }
 

@@ -76,6 +76,7 @@ export function SvgToPngTool() {
 
       {job && (
         <ImageBatchList
+          sourceToolSlug="svg-to-png"
           key={`${batchKey(job.files)}-${job.backgroundColor}`}
           files={job.files}
           processFile={(file) => renderSvgToPng(file, { backgroundColor: job.backgroundColor })}
