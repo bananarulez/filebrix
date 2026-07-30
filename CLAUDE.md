@@ -424,6 +424,16 @@ actual submit button; "Download" similarly matched a "Download all N as
 `{ exact: true }` for any button label that could be a substring of other
 on-page text, rather than assuming a short/unique-sounding label is safe.
 
+## Commit messages
+
+Commit subjects reference the `PROJECT_LOG.md` entry they implement:
+`log 34: short summary`, where the number is that entry's `## 34.` heading,
+added or extended in the same commit. One entry may span several commits —
+they all carry its number, so `git log --grep "log 34:"` recovers the round.
+Work with no log entry (dependency bumps, typos, repo/tooling setup) uses
+`chore: short summary` instead. Never reuse a number for unrelated work; the
+next entry is the next unused integer.
+
 ## Commands
 
 - `npm run dev` / `npm run build` / `npm run lint`
