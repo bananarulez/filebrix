@@ -18,6 +18,9 @@ const eslintConfig = defineConfig([
     "public/pdfjs/**",
     // Self-hosted, prebuilt maplibre-gl worker script — not our code.
     "public/maplibre/**",
+    // Generated from scripts/sw-template.js on every build — lint the
+    // template (which is linted, being under scripts/), not its output.
+    "public/sw.js",
   ]),
 ]);
 

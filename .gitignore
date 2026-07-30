@@ -69,3 +69,7 @@ next-env.d.ts
 # scripts/copy-material-icons-assets.mjs
 /public/fonts/
 src/engines/geospatial/ops/epsgIndex.generated.json
+
+# Generated from scripts/sw-template.js by scripts/generate-sw-precache.mjs
+# on every build — its precache list and build id are derived from .next output.
+/public/sw.js

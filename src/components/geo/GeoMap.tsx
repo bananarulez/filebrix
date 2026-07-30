@@ -28,6 +28,27 @@ export default function GeoMap({ geojson, bbox, height = 400, selectedFeatureInd
   const handleRef = useRef<GeoMapHandle | null>(null);
   const [ready, setReady] = useState(false);
   const [basemapId, setBasemapId] = useState<BasemapId>(DEFAULT_BASEMAP);
+  // Basemap tiles are the one deliberate off-origin request in the product
+  // (PRIVACY_ARCHITECTURE.md §1), and the service worker deliberately never
+  // caches them — caching a third-party response would contradict the
+  // documented same-origin-only cache. So offline, tiles genuinely cannot
+  // load. That is correct behaviour, but a blank grey canvas reads as a
+  // broken map, so it is stated instead: the user's own data still renders
+  // (it is a local GeoJSON source drawn with WebGL, needing no network).
+  const [tilesUnavailable, setTilesUnavailable] = useState(
+    () => typeof navigator !== "undefined" && navigator.onLine === false
+  );
+
+  useEffect(() => {
+    const goOffline = () => setTilesUnavailable(true);
+    const goOnline = () => setTilesUnavailable(false);
+    window.addEventListener("offline", goOffline);
+    window.addEventListener("online", goOnline);
+    return () => {
+      window.removeEventListener("offline", goOffline);
+      window.removeEventListener("online", goOnline);
+    };
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -96,6 +117,14 @@ export default function GeoMap({ geojson, bbox, height = 400, selectedFeatureInd
         role="region"
         aria-label="Interactive map"
       />
+      {tilesUnavailable && (
+        <div
+          role="status"
+          className="absolute top-2 left-1/2 z-10 -translate-x-1/2 rounded-md border border-amber-300 bg-amber-50/95 px-3 py-1.5 text-xs font-medium text-amber-900 shadow-sm dark:border-amber-700 dark:bg-amber-950/95 dark:text-amber-100"
+        >
+          Basemap unavailable offline — your data is still shown.
+        </div>
+      )}
       <label className="absolute top-2 left-2 z-10">
         <span className="sr-only">Basemap style</span>
         <select
