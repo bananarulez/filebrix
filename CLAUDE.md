@@ -439,6 +439,23 @@ next entry is the next unused integer.
 - `npm run dev` / `npm run build` / `npm run lint`
 - `npm run test` — Vitest unit + component tests
 - `npm run test:e2e` — Playwright end-to-end tests
+- `node scripts/check-bundle-budget.mjs` — performance budget gate; needs a
+  production build first. Fails if the JS every route loads crosses its
+  ceiling, or if an engine library escapes its dynamic-import boundary
+  (rule 4). Add `--report` to measure without gating — that's how you get
+  the numbers to justify raising a budget.
+- `npx lhci autorun` — Lighthouse against the homepage, a Studio page and a
+  tool page. Needs a production build. SEO/best-practices/accessibility
+  block; `performance` only warns (see `lighthouserc.json` for why).
+
+**CI runs the whole chain above on every push and PR**
+(`.github/workflows/ci.yml`) in the documented order, so a green local run
+and a green CI run mean the same thing. Two CI-only deviations, both passed
+as CLI flags rather than committed to config so local behavior is untouched:
+Playwright runs `--workers=2` (see `playwright.config.ts`'s comment — the
+local `workers: 1` is a hardware constraint and must stay 1), with
+`--reporter=list,html --trace=on-first-retry --retries=1` for failure
+artifacts.
 
 **`NEXT_PUBLIC_SITE_URL` must be set before a production `npm run build`.**
 It's baked in at build time into every canonical URL, OpenGraph/Twitter URL,

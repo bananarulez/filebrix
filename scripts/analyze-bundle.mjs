@@ -16,22 +16,15 @@ import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
 import { chromium } from "playwright-core";
+// Signatures live in one place so this reporting script and the CI gate
+// (scripts/check-bundle-budget.mjs) can't drift. The table that used to live
+// here had two wrapper-matching false positives and one signature that
+// matched nothing — see that module's comment.
+import { detectHeavyLibs } from "./lib/heavy-libs.mjs";
 
 const BASE = process.env.AUDIT_BASE_URL ?? "http://localhost:3100";
 const CHUNKS_DIR = path.resolve(process.cwd(), ".next", "static", "chunks");
 const FIXTURES_DIR = path.resolve(process.cwd(), "tests", "fixtures");
-const HEAVY_SIZE_THRESHOLD = 40_000; // bytes, raw — only worth signature-checking above this
-
-const HEAVY_LIB_SIGNATURES = [
-  ["maplibre-gl", /maplibre-gl-worker|maplibre-gl-shared/],
-  ["duckdb-wasm", /AsyncDuckDB/],
-  ["pdfjs-dist", /pdfjs-dist\/build\/pdf\.mjs/],
-  ["pdf-lib", /\bpdf-lib\b/],
-  ["xlsx (SheetJS)", /SheetJS/],
-  ["jszip", /generateAsync[\s\S]{0,400}createFolders|createFolders[\s\S]{0,400}generateAsync/],
-  ["exifr", /\bexifr\b/],
-  ["jspreadsheet-ce", /jss_worksheet|bossanova\.uk\/jspreadsheet/],
-];
 
 function fmtKB(bytes) {
   return `${(bytes / 1024).toFixed(1)} KB`;
@@ -44,11 +37,7 @@ function analyzeChunksOnDisk() {
     if (!file.endsWith(".js")) continue;
     const buf = fs.readFileSync(path.join(CHUNKS_DIR, file));
     const gzip = zlib.gzipSync(buf, { level: 9 }).length;
-    let libs = [];
-    if (buf.length >= HEAVY_SIZE_THRESHOLD) {
-      const text = buf.toString("utf8");
-      libs = HEAVY_LIB_SIGNATURES.filter(([, re]) => re.test(text)).map(([name]) => name);
-    }
+    const libs = detectHeavyLibs(buf.toString("utf8"), buf.length);
     info.set(file, { raw: buf.length, gzip, libs });
   }
   return info;

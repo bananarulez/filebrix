@@ -1,0 +1,177 @@
+name: CI
+
+# Automates the verification chain CLAUDE.md documents, in its documented
+# order: tsc -> lint -> vitest -> clean production build -> bundle budget ->
+# full Playwright suite. Every step below mirrors a rule written down there;
+# where the order looks odd, the comment says which rule forces it.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch makes an in-flight run obsolete. The e2e
+# job is the expensive one, so cancelling early matters.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # `npm ci` runs postinstall, which is what self-hosts the engine assets
+      # (DuckDB-WASM, pdf.js, MapLibre, Material Icons) out of node_modules and
+      # generates the EPSG index. All five are gitignored derived copies, so
+      # nothing works without this.
+      - name: Install dependencies (runs postinstall)
+        run: npm ci
+
+      # Guards two separate things that are invisible until they break:
+      #  1. postinstall actually produced its outputs in CI, not just locally.
+      #  2. CI needs NO network fetch for engine assets. The DuckDB parquet
+      #     extension is NOT reproducible from node_modules — it comes from a
+      #     one-time CDN fetch (scripts/fetch-duckdb-extensions.mjs, which is
+      #     deliberately not part of postinstall), which is exactly why the
+      #     binaries are committed. If that ever regressed to a runtime fetch,
+      #     the CSP would block it and DuckDB would fail with an opaque
+      #     `function signature mismatch` (CLAUDE.md rule 4).
+      - name: Verify engine assets are present without any network fetch
+        run: |
+          set -euo pipefail
+          for d in public/duckdb public/pdfjs public/maplibre public/fonts; do
+            [ -d "$d" ] && [ -n "$(ls -A "$d")" ] || { echo "::error::postinstall did not produce $d"; exit 1; }
+            echo "  ok (postinstall): $d"
+          done
+          [ -s src/engines/geospatial/ops/epsgIndex.generated.json ] \
+            || { echo "::error::EPSG index was not generated"; exit 1; }
+          echo "  ok (postinstall): epsgIndex.generated.json"
+          for f in public/duckdb-ext-files/wasm_eh/parquet.duckdb_extension.wasm \
+                   public/duckdb-ext-files/wasm_mvp/parquet.duckdb_extension.wasm; do
+            [ -s "$f" ] || { echo "::error::$f missing — it must be committed, not fetched"; exit 1; }
+            echo "  ok (committed, no fetch needed): $f"
+          done
+
+      # --- CLAUDE.md verification chain, in order -------------------------
+
+      - name: 1/5 Type check
+        run: npx tsc --noEmit
+
+      - name: 2/5 Lint
+        run: npm run lint
+
+      - name: 3/5 Unit + component tests (Vitest)
+        run: npm run test
+
+      # The `rm -rf .next` wipe is not hygiene theatre: a stale
+      # .next/dev/types/* typed-route file can reference a page that was
+      # deleted and fail the build on a route that no longer exists, which
+      # looks like a routing bug rather than a stale artifact (CLAUDE.md).
+      # NEXT_PUBLIC_SITE_URL must be set here — unset it silently falls back
+      # to http://localhost:3000 and bakes that into every canonical URL,
+      # OpenGraph tag and sitemap entry.
+      - name: 4/5 Clean production build
+        env:
+          NEXT_PUBLIC_SITE_URL: https://example.com
+        run: |
+          rm -rf .next
+          npm run build
+
+      # Must run here, between the build and Playwright: Playwright's own
+      # webServer runs `npm run build` again and would overwrite the .next
+      # this reads.
+      - name: Bundle size budget + lazy-load boundary
+        run: node scripts/check-bundle-budget.mjs
+
+      - name: Resolve Playwright version (for the browser cache key)
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.pw.outputs.version }}
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Deliberately NO NEXT_PUBLIC_SITE_URL here. Playwright's webServer
+      # rebuilds, and three tests (seo.spec.ts, seo-architecture.spec.ts)
+      # compare sitemap.xml/canonical URLs against Playwright's own baseURL —
+      # they only pass against a build that took the localhost fallback
+      # (CLAUDE.md step 5).
+      #
+      # --workers overrides playwright.config.ts's permanent `workers: 1`,
+      # which is a constraint of the development machine's hardware, NOT of
+      # this runner. Read that file's comment before changing this number.
+      # Kept at 2 rather than the runner's core count because each worker
+      # instantiates the ~35 MB DuckDB-WASM module.
+      #
+      # --reporter/--trace/--retries are passed here rather than committed to
+      # the config for the same reason: they're CI-only, and the local
+      # experience stays exactly as it was.
+      - name: 5/5 End-to-end tests (Playwright)
+        run: npx playwright test --workers=2 --reporter=list,html --trace=on-first-retry --retries=1
+
+      - name: Upload Playwright report and traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # Separate job so it runs in parallel with `verify` and its result is an
+  # independent signal — a Lighthouse regression shouldn't hide behind a
+  # 20-minute e2e run, and an e2e failure shouldn't hide a perf regression.
+  lighthouse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # lighthouserc.json's own assertions decide what blocks. seo,
+      # best-practices and accessibility are DOM-based and measured at zero
+      # run-to-run variance, so they fail the job. `performance` is warn-only
+      # because it was verified on a fast local machine, not on a shared
+      # runner — see the rationale block in lighthouserc.json.
+      - name: Build (production)
+        env:
+          NEXT_PUBLIC_SITE_URL: https://example.com
+        run: |
+          rm -rf .next
+          npm run build
+
+      - name: Lighthouse CI (homepage, a Studio page, a tool page)
+        run: npx lhci autorun
+
+      - name: Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-report
+          path: .lighthouseci-report/
+          retention-days: 14
+          if-no-files-found: ignore

@@ -2721,3 +2721,124 @@ variable — what the suite's own `webServer` command does — turned all 250
 green. Noted in CLAUDE.md's verification section so the next confusing
 three-test failure is recognized in seconds rather than debugged as a routing
 regression.
+
+---
+
+## 34. CI automation, a performance budget, and a guard that was verified by breaking it
+
+The verification chain in CLAUDE.md was well documented and never automated:
+every run so far had been manual, on one machine — the same machine that
+hard-crashed mid-e2e in entry 15. This pass automates exactly what was
+already written down, and adds the one class of regression the existing
+suite structurally cannot catch.
+
+### The workflow
+
+`.github/workflows/ci.yml` runs the documented order on push and PR:
+`tsc --noEmit` → `lint` → Vitest → `rm -rf .next` + production build →
+bundle budget → Playwright. Two ordering constraints are load-bearing and
+commented in the file: the budget check must sit *between* the build and
+Playwright, because Playwright's own `webServer` runs `npm run build` again
+and would overwrite the `.next` the budget check reads; and the Playwright
+step deliberately does **not** set `NEXT_PUBLIC_SITE_URL`, because three SEO
+tests only pass against a build that took the localhost fallback (the same
+trap recorded at the end of entry 33).
+
+A dedicated step asserts that `postinstall` really produced `public/duckdb`,
+`public/pdfjs`, `public/maplibre`, `public/fonts` and the EPSG index in CI,
+and that the two committed DuckDB parquet extension binaries are present. The
+second half of that check is the point: those binaries are *not* reproducible
+from `node_modules` — they come from a one-time CDN fetch
+(`scripts/fetch-duckdb-extensions.mjs`, deliberately not part of
+`postinstall`), which is why they're committed. **CI needs no network fetch
+for any engine asset**, and this step fails loudly if that ever stops being
+true, rather than letting it resurface as DuckDB's opaque
+`RuntimeError: function signature mismatch`.
+
+**`playwright.config.ts`'s `workers: 1` was not touched.** It is a hardware
+constraint of the development machine (entry 15), not a tuning oversight.
+CI's higher count is passed as `--workers=2` on the command line, along with
+`--reporter=list,html --trace=on-first-retry --retries=1`. Passing all four
+as CLI flags rather than adding a `process.env.CI` branch was deliberate:
+the only literal in that file stays `1`, so no future edit to a CI-only
+number can change what runs locally. The config gained a comment saying so.
+
+### The performance budget, and three broken signatures found on the way
+
+`scripts/check-bundle-budget.mjs` fails CI on two things: the shared JS
+crossing a ceiling, and an engine library escaping its dynamic-import
+boundary (rule 4). It reads the **real build output** — every route is
+prerendered to HTML, so each route's script tags are the truthful record of
+its cold-load chunk set, and the shared set is their intersection. No source
+grepping, no hardcoded chunk names (Turbopack content-hashes them).
+
+Measured on the current build: **shared-by-all-108-routes is 181.5 KB gzip**
+(8 chunks), worst canary route is the homepage at **217.1 KB**. Budgets set
+at 210 KB and 250 KB — roughly 15% headroom each.
+
+Reusing `analyze-bundle.mjs`'s heavy-library signature table turned out to be
+the interesting part, because three of its eight signatures were wrong in
+ways that only matter once a signature *gates* a build instead of printing a
+report:
+- **`/AsyncDuckDB/` matched our own wrapper.** `engines/parquet/index.ts`
+  compiles to a chunk containing `new t.AsyncDuckDB(...)`, where `t` is the
+  correctly-lazy dynamic import. The real library was in a different chunk
+  entirely (`getJsDelivrBundles` appears in it and not in ours).
+- **`/maplibre-gl-worker/` matched our own wrapper** for the same reason —
+  `maplibreClient.ts` contains that literal string to pass to `setWorkerUrl()`.
+- **The jszip signature matched zero chunks**, i.e. it would never have
+  caught anything.
+
+Both false positives would have failed CI on correct code, which for a gate
+is worse than no check at all — the fix everyone reaches for is disabling it.
+Signatures were re-derived by diffing the real library chunk against its
+wrapper chunk, and a `MIN_HEAVY_CHUNK_BYTES` floor was added as defense in
+depth. They now live in one place, `scripts/lib/heavy-libs.mjs`, imported by
+both the reporting script and the gate so the two cannot drift.
+
+### Verified by breaking it, twice
+
+A guard never observed failing isn't verified (entry 22's precedent). The
+first attempt added `import * as XLSX from "xlsx"` to `SiteFooter.tsx` and
+the check **passed** — correctly. `SiteFooter` is a Server Component, so its
+imports go into the server bundle and never reach the browser; there was
+nothing for a client-bundle guard to catch. Worth recording, because it's a
+real limit of this check's scope: **it guards what ships to browsers, and a
+heavy import in a Server Component is invisible to it** (and, to be fair,
+harmless to Core Web Vitals).
+
+Repeating it in `UniversalFileDrop.tsx` — a `"use client"` component the
+homepage renders — failed both gates as intended: the homepage jumped
+217.1 → **377.3 KB** gzip, over budget, and `xlsx (SheetJS)` was named in
+the offending chunk. Reverted; the homepage returned to 217.1 KB and the
+check to exit 0.
+
+### Lighthouse: what blocks, and what deliberately doesn't
+
+`lighthouserc.json` runs three representative page types (homepage, a Studio
+page, a tool page), 3 runs each, in a job parallel to `verify`. Measured
+scores showed **zero run-to-run variance** on seo, accessibility and
+best-practices (e.g. accessibility 0.91, 0.91, 0.91) — they're DOM-based
+audits, not timing ones — so those block. `performance` measured 1.0 on
+every run but only on a fast local machine; that was **not** verified on a
+shared runner, so it's `warn` until someone has real runner data. A
+perf assertion that fails intermittently teaches everyone to ignore the
+whole job.
+
+### Two findings reported, not fixed
+
+Both are outside this pass's "dev dependencies only, no application changes"
+scope, and neither is caused by it:
+1. **Accessibility is 0.91–0.93, not 1.0**, from two real issues on every
+   page: `text-gray-400` on white is 2.6:1 where 4.5:1 is required (footer
+   text, `FileDropZone` hint), Studio tab buttons are 4.39:1 — just under —
+   and every `<input type="file" class="sr-only">` has **no accessible
+   name**, so screen-reader users meet an unlabeled control at the product's
+   central interaction. The budget is pinned at 0.90 to prevent regression
+   without silently demanding the fix.
+2. **`js-yaml` 5.0.0–5.2.1 has a high-severity DoS advisory** and is a
+   production dependency (the YAML tools). Pre-existing.
+
+**Verification:** `tsc --noEmit` clean, lint clean, Vitest 743/743 across 97
+files, clean production build, budget check green, full Playwright suite at
+`workers: 1`.
