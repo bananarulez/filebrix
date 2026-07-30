@@ -1,0 +1,5 @@
+name,latitude,longitude,category
+City Hall,40.7128,-74.0060,landmark
+Brooklyn Bridge,40.7061,-73.9969,landmark
+Central Park,40.7829,-73.9654,park
+Bad Row,not-a-number,-73.9,unknown

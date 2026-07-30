@@ -1,0 +1,3 @@
+<?xml version="1.0"?>
+<!DOCTYPE rows [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+<rows><row><value>&xxe;</value></row></rows>

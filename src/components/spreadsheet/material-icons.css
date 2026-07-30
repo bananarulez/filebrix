@@ -1,0 +1,40 @@
+/* Self-hosted "Material Icons" webfont (see scripts/copy-material-icons-assets.mjs)
+   — jspreadsheet-ce's toolbar renders `<i class="material-icons">format_bold</i>`
+   and expects this exact font-family to already be loaded by the page, the
+   same way the classic Google Fonts Material Icons stylesheet provides it.
+   Neither jspreadsheet-ce nor jsuites ship the @font-face themselves
+   (confirmed: absent from both packages' own CSS) — jsuites only adds
+   *contextual* sizing/spacing rules on top (e.g. `.jtoolbar .material-icons`),
+   never the base class. Without both blocks below, the icon ligature names
+   render as literal text instead of glyphs — confirmed empirically: adding
+   only the @font-face was not enough, since nothing then applied that font
+   family to a bare `.material-icons` element. This is a direct copy of the
+   base rule from the `material-icons` npm package's own material-icons.css
+   (Apache-2.0), pointed at our self-hosted font files instead of a relative
+   path into node_modules. */
+@font-face {
+  font-family: "Material Icons";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src:
+    url("/fonts/material-icons.woff2") format("woff2"),
+    url("/fonts/material-icons.woff") format("woff");
+}
+
+.material-icons {
+  font-family: "Material Icons";
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "liga";
+}

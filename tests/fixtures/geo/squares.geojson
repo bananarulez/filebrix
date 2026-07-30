@@ -1,0 +1,11 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature", "properties": { "region": "north", "pop": 10 },
+      "geometry": { "type": "Polygon", "coordinates": [[[14.4,50.0],[14.5,50.0],[14.5,50.1],[14.4,50.1],[14.4,50.0]]] } },
+    { "type": "Feature", "properties": { "region": "north", "pop": 30 },
+      "geometry": { "type": "Polygon", "coordinates": [[[14.5,50.0],[14.6,50.0],[14.6,50.1],[14.5,50.1],[14.5,50.0]]] } },
+    { "type": "Feature", "properties": { "region": "south", "pop": 20 },
+      "geometry": { "type": "MultiPolygon", "coordinates": [[[[14.7,50.0],[14.8,50.0],[14.8,50.1],[14.7,50.1],[14.7,50.0]]]] } }
+  ]
+}

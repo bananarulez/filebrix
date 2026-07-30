@@ -1,0 +1,21 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "Test Square" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [14.42, 50.085],
+            [14.43, 50.085],
+            [14.43, 50.095],
+            [14.42, 50.095],
+            [14.42, 50.085]
+          ]
+        ]
+      }
+    }
+  ]
+}
