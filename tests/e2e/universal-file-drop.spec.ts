@@ -116,3 +116,52 @@ test.describe("Universal File Drop", () => {
     expect(externalRequests).toEqual([]);
   });
 });
+
+test.describe("Chaining a tool's output into the next tool", () => {
+  // Same `lib/fileHandoff.ts` mechanism the homepage drop uses, now driven
+  // from a *result* rather than an initial file selection — so a user who
+  // converts a PDF to an image and then wants to resize it never downloads
+  // and re-drops it.
+  const PDF_FIXTURE = path.join(__dirname, "..", "fixtures", "pdf", "real-scanned-image-only.pdf");
+
+  test("sends a converted result straight to another tool, with no re-selection", async ({ page }) => {
+    await page.goto("/convert/pdf-to-images");
+    await page.locator('input[type="file"]').setInputFiles(PDF_FIXTURE);
+    await page.getByRole("button", { name: "Convert to images", exact: true }).click();
+
+    const panel = page.getByRole("region", { name: "Send this result to another tool" });
+    await expect(panel).toBeVisible({ timeout: 30_000 });
+    // Only tools that really accept the OUTPUT's format are offered — the
+    // list comes from getToolsAcceptingFormat(), so it can't invent one.
+    await expect(panel.getByRole("link", { name: "Resize Image", exact: true })).toBeVisible();
+    // Never offers to send the output back into the tool that produced it.
+    await expect(panel.getByRole("link", { name: "PDF to Images", exact: true })).toHaveCount(0);
+
+    await panel.getByRole("link", { name: "Resize Image", exact: true }).click();
+    await expect(page).toHaveURL(/\/tools\/resize-image$/);
+
+    // The drop zone stays visible either way, so the discriminator is that
+    // the tool now has a file to act on: its submit button only renders once
+    // files are loaded.
+    await expect(page.getByRole("button", { name: "Resize", exact: true })).toBeVisible({ timeout: 20_000 });
+  });
+
+  test("a hard reload of the destination gets nothing, and shows its normal empty drop zone", async ({
+    page,
+  }) => {
+    await page.goto("/convert/pdf-to-images");
+    await page.locator('input[type="file"]').setInputFiles(PDF_FIXTURE);
+    await page.getByRole("button", { name: "Convert to images", exact: true }).click();
+
+    const panel = page.getByRole("region", { name: "Send this result to another tool" });
+    await expect(panel).toBeVisible({ timeout: 30_000 });
+    await panel.getByRole("link", { name: "Resize Image", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Resize", exact: true })).toBeVisible({ timeout: 20_000 });
+
+    // A hard reload starts a fresh JS module registry, so the module-scoped
+    // handoff is legitimately gone — the safe, expected fallback, not a bug.
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Resize", exact: true })).toHaveCount(0);
+    await expect(page.locator('input[type="file"]').first()).toBeAttached();
+  });
+});

@@ -109,9 +109,14 @@ change how a filename/file becomes an output.
      separately confirmed by scanning re-encoded bytes for the `Exif\0\0`
      marker — which is why "Remove EXIF Metadata" needs no special code
      path beyond the same decode→encode round-trip every other image tool
-     already does. Verified against this project's Chromium; Firefox/Safari
-     are assumed spec-consistent but not verified, since e2e here is
-     Chromium-only.
+     already does. **Verified in Chromium *and* Firefox** — no longer an
+     assumption: `tests/e2e/image-tools.spec.ts`'s orientation test carries
+     the `@cross-browser` tag and runs in both (PROJECT_LOG.md entry 35), so
+     a divergence would now fail the suite rather than ship silently.
+     WebKit runs the same tagged subset in CI only — this developer's
+     antivirus quarantines its Playwright executable, so it can't be run
+     locally (see `playwright.config.ts`); treat Safari as verified only
+     once a CI run is green.
    - **`OffscreenCanvas`'s 2D context `filter` property (CSS filter syntax —
      `brightness()`/`contrast()`/`grayscale()`) works inside a real Worker**
      in this project's target Chromium — confirmed empirically (a throwaway
@@ -438,7 +443,17 @@ next entry is the next unused integer.
 
 - `npm run dev` / `npm run build` / `npm run lint`
 - `npm run test` — Vitest unit + component tests
-- `npm run test:e2e` — Playwright end-to-end tests
+- `npm run test:e2e` — Playwright end-to-end tests. Locally this is
+  chromium (everything) + firefox (the `@cross-browser` subset only).
+  **WebKit runs in CI only** — this machine's antivirus quarantines its
+  executable; set `PLAYWRIGHT_WEBKIT=1` to force it locally after adding an
+  AV exclusion. All projects share the one worker (see the config comment):
+  a second project adds runtime, never a second concurrent browser.
+- Fixture regeneration (manual, needs `pip install reportlab pikepdf`):
+  `python scripts/generate-real-world-pdf-fixtures.py` and
+  `python scripts/generate-real-world-image-fixtures.py` — these produce the
+  fixtures deliberately *not* made by the libraries that read them
+  (reportlab/qpdf PDFs, a real animated WebP, a 6 MP photo).
 - `node scripts/check-bundle-budget.mjs` — performance budget gate; needs a
   production build first. Fails if the JS every route loads crosses its
   ceiling, or if an engine library escapes its dynamic-import boundary
@@ -1150,15 +1165,21 @@ Studio's capabilities were client-side tabs with no URL at all, so the only
 crawlable path from an Application to a tool was the Application page's one
 flat "related actions" list.
 
-**Capability index pages currently have no inbound internal links** — the
-"Browse by capability" nav on `StudioLayout` was their only one, and it was
-removed by product decision. They remain real, indexable, canonical pages
-listed in `sitemap.xml`, and they still link *down* to their tools and
-*sideways* to siblings, but a crawler now reaches them via the sitemap
-rather than by walking the site. The Application → Tool hop still works
-through each Studio page's "Related tools" list. If the capability layer is
-ever meant to carry organic traffic again, it needs an inbound link from
-somewhere — that is the specific thing to restore, not the whole nav. `registry/capabilities.ts` is the single
+**Capability index pages are reached through every tool page's breadcrumb**
+(entry 36). They spent one round with *zero* inbound internal links: the
+"Browse by capability" nav on `StudioLayout` was their only one and was
+removed by product decision (entry 28), leaving them reachable from
+`sitemap.xml` alone. The fix was the one inbound link that entry called
+for, not a restored nav — `ToolPageLayout` now renders the trail the URL
+hierarchy always described, Home → Application → Capability → Tool, so all
+56 Studio-owned tool pages link up into the 14 capability pages.
+**Do not re-add the capability nav or `RelatedApplications` to Studio
+pages** — `seo-architecture.spec.ts` asserts their absence, and the
+breadcrumb already solves what their removal broke. The crumb is resolved
+via `getCapabilityForTool()`, which returns `undefined` for a tool whose
+capability deliberately has no index page (every Developer Toolkit tool, or
+a Studio capability with no standalone tools); the crumb is then omitted
+rather than linked to a 404. `registry/capabilities.ts` is the single
 source for which capability pages exist, and `components/studio/
 CapabilityPageContent.tsx` renders all of them (one thin static page folder
 each, matching the Developer Toolkit sub-category precedent rather than a

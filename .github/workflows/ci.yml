@@ -103,8 +103,12 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ steps.pw.outputs.version }}
 
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+      # All three engines. Firefox and WebKit only ever run the small
+      # @cross-browser tagged subset (see playwright.config.ts); WebKit in
+      # particular runs ONLY here, because the development machine's
+      # antivirus quarantines its executable.
+      - name: Install browsers
+        run: npx playwright install --with-deps chromium firefox webkit
 
       # Deliberately NO NEXT_PUBLIC_SITE_URL here. Playwright's webServer
       # rebuilds, and three tests (seo.spec.ts, seo-architecture.spec.ts)

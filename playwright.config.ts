@@ -1,4 +1,33 @@
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
+
+/**
+ * Tag marking the small set of assertions whose correctness depends on the
+ * *browser engine's own* behavior rather than on our code: EXIF
+ * auto-orientation, transparent-PNG compositing, SVG script execution, and
+ * WebGL map rendering. Declared once here and grep'd by the firefox/webkit
+ * projects below, so the subset can't drift out of sync with a hand-kept
+ * list of file paths.
+ *
+ * Deliberately tiny. Everything else in the suite exercises our own logic,
+ * which a second browser re-verifies at real cost (see `workers` below) and
+ * near-zero information gain.
+ */
+const CROSS_BROWSER_TAG = "@cross-browser";
+
+/**
+ * WebKit runs in CI, not on the development machine — its Playwright build
+ * ships a `Playwright.exe` that this developer's antivirus quarantines on
+ * sight, so `playwright install webkit` reports success and then the binary
+ * is gone by the time a test launches it (confirmed: the download completed,
+ * `INSTALLATION_COMPLETE` was written, and the executable was missing). That
+ * is a local endpoint-security policy, not a statement about WebKit, so the
+ * project is simply skipped where it can't run rather than dropped.
+ *
+ * Ubuntu CI runners have no such interference, so `CI` opts back in. Set
+ * PLAYWRIGHT_WEBKIT=1 to force it locally (e.g. after adding an AV exclusion
+ * for %LOCALAPPDATA%\ms-playwright).
+ */
+const RUN_WEBKIT = Boolean(process.env.CI || process.env.PLAYWRIGHT_WEBKIT);
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -27,6 +56,33 @@ export default defineConfig({
   use: {
     baseURL: "http://localhost:3000",
   },
+  // Three projects, ONE worker. Playwright's `workers` is a global cap
+  // across all projects, not a per-project one, so these run strictly one
+  // after another — adding Firefox and WebKit adds runtime, never a second
+  // concurrent browser instance. That distinction is the whole reason this
+  // is safe on the machine described above; do not "parallelize across
+  // browsers" by raising `workers`. If the total runtime ever becomes
+  // uncomfortable, shrink the tagged subset instead.
+  projects: [
+    // The full suite, as before this file gained projects at all.
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    // Only the engine-behavior subset. `grep` takes the tag from the single
+    // constant above rather than a duplicated regex literal per project.
+    {
+      name: "firefox",
+      use: { ...devices["Desktop Firefox"] },
+      grep: new RegExp(CROSS_BROWSER_TAG),
+    },
+    ...(RUN_WEBKIT
+      ? [
+          {
+            name: "webkit",
+            use: { ...devices["Desktop Safari"] },
+            grep: new RegExp(CROSS_BROWSER_TAG),
+          },
+        ]
+      : []),
+  ],
   webServer: {
     // Built + started, not `next dev`: the dev server compiles each route on
     // first request, and several Playwright workers hitting the same

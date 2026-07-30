@@ -78,6 +78,64 @@ test.describe("Capability index pages", () => {
     await expect(page).toHaveURL(/\/geospatial-tools$/);
   });
 
+  test("a tool page's breadcrumb passes through its Capability, and that crumb navigates", async ({ page }) => {
+    // The URL hierarchy is Home -> Application -> Capability -> Tool (entry
+    // 21), so the visible trail must include the Capability level. This is
+    // also the ONLY inbound internal link capability index pages have: entry
+    // 28 removed the "Browse by capability" nav from Studio pages by product
+    // decision, which left them reachable from sitemap.xml alone.
+    await page.goto("/convert/png-to-jpg");
+    const breadcrumb = page.getByRole("navigation", { name: "Breadcrumb" });
+    await expect(breadcrumb.getByRole("link", { name: "Image Studio", exact: true })).toHaveAttribute(
+      "href",
+      "/image-tools"
+    );
+    const capabilityCrumb = breadcrumb.getByRole("link", { name: "Convert", exact: true });
+    await expect(capabilityCrumb).toHaveAttribute("href", "/image-tools/convert");
+
+    await capabilityCrumb.click();
+    await expect(page).toHaveURL(/\/image-tools\/convert$/);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  });
+
+  test("the tool-page BreadcrumbList JSON-LD carries all four levels", async ({ page }) => {
+    // Breadcrumbs.tsx builds the visible trail and this markup from the same
+    // `items`, so they can't disagree — asserted rather than assumed.
+    await page.goto("/convert/png-to-jpg");
+    const blocks = await jsonLd(page);
+    const trail = blocks.find((block) => block["@type"] === "BreadcrumbList")!;
+    const names = (trail.itemListElement as { name: string }[]).map((item) => item.name);
+    expect(names).toEqual(["Home", "Image Studio", "Convert", "PNG to JPG Converter"]);
+  });
+
+  test("a tool whose capability has no index page gets no capability crumb", async ({ page }) => {
+    // Developer Toolkit tools use `devCategory`, not a Studio capability, so
+    // there is no capability page to link to. The crumb must be omitted
+    // rather than rendered as a link to a 404.
+    await page.goto("/tools/uuid-generator");
+    const breadcrumb = page.getByRole("navigation", { name: "Breadcrumb" });
+    await expect(breadcrumb.getByRole("link", { name: "Developer Toolkit", exact: true })).toBeVisible();
+    await expect(breadcrumb.getByRole("listitem")).toHaveCount(3); // Home, Developer Toolkit, tool
+  });
+
+  test("Parquet Viewer resolves its Application through relatedEngines, not a CATEGORIES engine match", async ({
+    page,
+  }) => {
+    // `engine: "parquet"` has no CATEGORIES entry at all; Data Studio owns it
+    // via STUDIOS[].relatedEngines. A one-step lookup silently dropped the
+    // Application crumb entirely here.
+    await page.goto("/tools/parquet-viewer");
+    const breadcrumb = page.getByRole("navigation", { name: "Breadcrumb" });
+    await expect(breadcrumb.getByRole("link", { name: "Data Studio", exact: true })).toHaveAttribute(
+      "href",
+      "/data-studio"
+    );
+    await expect(breadcrumb.getByRole("link", { name: "Viewer", exact: true })).toHaveAttribute(
+      "href",
+      "/data-studio/view"
+    );
+  });
+
   test("a capability page cross-links its sibling capabilities and the other Applications", async ({ page }) => {
     await page.goto("/data-studio/convert");
 

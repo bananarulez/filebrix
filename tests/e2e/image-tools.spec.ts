@@ -51,7 +51,9 @@ async function downloadAndSamplePixel(
 }
 
 test.describe("PNG to JPG — transparency handling", () => {
-  test("fills transparent areas with the chosen background color instead of going black", async ({ page }) => {
+  test("fills transparent areas with the chosen background color instead of going black", {
+    tag: "@cross-browser",
+  }, async ({ page }) => {
     await page.goto("/convert/png-to-jpg");
     await page.locator('input[type="file"]').setInputFiles(fixture("transparent.png"));
 
@@ -72,9 +74,9 @@ test.describe("PNG to JPG — transparency handling", () => {
 });
 
 test.describe("EXIF orientation", () => {
-  test("Rotate Image outputs an already-correctly-oriented image for a photo with EXIF orientation metadata", async ({
-    page,
-  }) => {
+  test("Rotate Image outputs an already-correctly-oriented image for a photo with EXIF orientation metadata", {
+    tag: "@cross-browser",
+  }, async ({ page }) => {
     await page.goto("/tools/rotate-image");
     await page.locator('input[type="file"]').setInputFiles(fixture("exif-oriented.jpg"));
 
@@ -101,7 +103,9 @@ test.describe("EXIF orientation", () => {
 });
 
 test.describe("SVG security", () => {
-  test("a script-carrying SVG never executes its script when converted to PNG", async ({ page }) => {
+  test("a script-carrying SVG never executes its script when converted to PNG", {
+    tag: "@cross-browser",
+  }, async ({ page }) => {
     let dialogFired = false;
     page.on("dialog", (dialog) => {
       dialogFired = true;

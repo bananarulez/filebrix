@@ -294,7 +294,14 @@ across the codebase, cross-checked against real-browser tests.
 - SVG handling: script-carrying and external-resource-referencing SVG
   payloads were tested against the real `svg-to-png` tool in a real
   browser — no script execution, no network request
-  (`tests/e2e/image-tools.spec.ts`).
+  (`tests/e2e/image-tools.spec.ts`). The script-execution half of that
+  claim is **verified in two independent browser engines**, Chromium and
+  Firefox: it carries the `@cross-browser` tag, so both run it (WebKit runs
+  the same subset in CI only — see `playwright.config.ts`). That matters
+  more here than for a typical assertion, because "an SVG's script never
+  runs" is a property of the *browser's* SVG-in-`<img>` handling, not of
+  our code, so a single-engine check was only ever evidence about one
+  engine's implementation.
 - XXE: DOMParser-based XML/KML/GPX parsing across the Spreadsheet and
   Geospatial engines does not resolve external entities or a
   billion-laughs expansion; re-verified with a fresh XXE payload against

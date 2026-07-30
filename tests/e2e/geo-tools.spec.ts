@@ -27,7 +27,9 @@ test.describe("GeoJSON Viewer", () => {
     await expect(page.locator(".maplibregl-canvas")).toBeVisible({ timeout: 15_000 });
   });
 
-  test("renders the map inside its own container, and renders the dropped polygon on it — not just the basemap", async ({
+  test("renders the map inside its own container, and renders the dropped polygon on it — not just the basemap", {
+    tag: "@cross-browser",
+  }, async ({
     page,
   }) => {
     // Sanity check for a real bug found in local dev: MapLibre's own
