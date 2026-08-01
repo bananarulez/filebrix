@@ -182,6 +182,18 @@ change how a filename/file becomes an output.
    (`registry/matrix.ts`), sitemap, category pages and related-tools links
    are all derived from `registry/index.ts#tools` — don't hand-maintain a
    parallel list anywhere.
+   - **That includes user-facing copy that states a fact the registry
+     already knows.** A Studio's FAQ may write `{toolCount}` and
+     `getStudioConfig()` substitutes the real number, counted from
+     `relatedEngines` (so Data Studio correctly includes Parquet Viewer).
+     This exists because three FAQ answers hard-coded their counts and
+     drifted — Geospatial Studio shipped "every one of the 11 individual
+     geospatial tool pages" for a while after it had grown to 15.
+     `getStudioConfig` is the one door every consumer goes through, so no
+     placeholder can reach the DOM or the FAQPage JSON-LD;
+     `tests/unit/registryIntegrity.test.ts` asserts both that nothing leaks
+     an unresolved `{token}` and that any stated count matches the
+     registry.
 9. **The Universal File Drop hands the dropped `File` off to whichever tool
    the user clicks — never make them re-select it.** `lib/fileHandoff.ts` is
    a plain module-scoped variable (`setPendingFile`/`takePendingFile`), not
@@ -199,10 +211,19 @@ change how a filename/file becomes an output.
    is why adding a new file-based tool only costs one extra prop (its own
    registry slug, or one computed from whatever prop already determines
    which tool it is, e.g. `` `${sourceFormat}-to-${targetFormat}` `` for
-   `ImageConvertTool`), not a bespoke handoff implementation per tool. The
-   two bespoke (non-`FileDropZone`) file-opening tools, `SqlFormatterTool`
-   and the geo/CSV components with their own drop zones, follow the same
-   pattern by hand. `UniversalFileDrop.tsx` (homepage) is the only writer
+   `ImageConvertTool`), not a bespoke handoff implementation per tool.
+   `SqlFormatterTool`, the one remaining bespoke (non-`FileDropZone`)
+   file-opening tool, follows the same pattern by hand.
+   - **A Studio's one shared drop-zone panel must be passed the *active
+     action's* slug** (`PdfFilePanel`/`ImageFilePanel`/`GeoFilePanel`'s
+     `toolSlug` prop, computed by each Studio — see e.g.
+     `GeospatialStudioApp`'s `TOOL_SLUG_BY_ACTION`). Centralizing the drop
+     zone is what makes this necessary: the per-tool `toolSlug` that used to
+     ride along on each tool's own drop zone has nowhere to live otherwise,
+     and Geospatial Studio spent a round with the handoff silently dead
+     because its shared panel was rendered without one. An action with no
+     standalone tool page (PDF's View, Image's Crop, geo's Summary) passes
+     `undefined` — it's never a handoff target. `UniversalFileDrop.tsx` (homepage) is the only writer
    (`setPendingFile` on a result link's `onClick`, right before the
    navigation `<Link>` itself proceeds) — it groups whatever
    `getToolsAcceptingFormat()` actually returns into VIEW/CONVERT/EDIT/TOOLS
@@ -255,14 +276,24 @@ change how a filename/file becomes an output.
       backs this Tool) — never surface that value in UI; a Tool's
       user-visible category association is `CATEGORIES.find(c => c.engine
       === tool.engine).name` (an Application name), not the engine id.
-    - Category **slugs** (`/data-studio`, `/pdf-tools`, `/image-tools`,
-      `/geospatial-tools`, `/developer-tools`) are frozen for backward
-      compatibility even where they no longer match the current display
-      name (`pdf-tools` → "PDF Studio," etc.) — rename `CategoryDefinition
-      .name`, never `.slug`, and add a permanent redirect in
-      `next.config.ts#redirects()` if a route itself ever needs to move
-      (see the `/spreadsheet-tools`→`/data-studio` and `/data-tools`→
-      `/data-studio` entries there for the pattern).
+    - The four Studio **slugs now match their display names**
+      (`/data-studio`, `/pdf-studio`, `/image-studio`,
+      `/geospatial-studio`); Developer Toolkit keeps `/developer-tools`,
+      since it deliberately isn't a Studio. `/pdf-tools`, `/image-tools`
+      and `/geospatial-tools` were the earlier slugs and are **permanently
+      redirected**, along with every capability page under them
+      (`/pdf-tools/pages` → `/pdf-studio/pages`) — see
+      `next.config.ts#redirects()`, which also still carries the older
+      `/spreadsheet-tools`→`/data-studio`, `/data-tools`→`/data-studio`
+      and `/developer-tools/json`→`/data-studio` entries.
+    - **A slug is still not a free-form label.** Changing one changes real,
+      indexed URLs: rename `CategoryDefinition.name` alone when only the
+      wording changed, and only move `.slug` when the URL itself is wrong —
+      always with a permanent redirect for the page *and* its sub-paths, so
+      no external link 404s and ranking transfers rather than splitting.
+      Individual tool URLs (`/pdf/merge`, `/convert/png-to-jpg`,
+      `/geo/geojson-viewer`, …) have never lived under a category slug and
+      must not start.
 
 ## Adding a tool
 
@@ -293,12 +324,20 @@ change how a filename/file becomes an output.
 Don't add a tool to the registry without a working page behind it — no
 placeholder tools (README.txt §53).
 
-**When several tools share one engine** (e.g. the 6 spreadsheet tools),
-don't write 6 bespoke interactive components — build one or two shared,
-parameterized ones (e.g. `components/spreadsheet/SpreadsheetViewerTool.tsx`,
-`SpreadsheetConverterTool.tsx`) that each tool page renders with different
-props. They import only the engine's public API, never its heavy libraries
-directly, so this doesn't violate the lazy-load rule.
+**When several tools share one engine, don't write N bespoke interactive
+components** — build one or a few shared, parameterized ones that each tool
+page renders with different props. They import only the engine's public
+API, never its heavy libraries directly, so this doesn't violate the
+lazy-load rule. Current examples, in increasing order of consolidation:
+`components/dev-tools/DiffTool.tsx` (one `mode` prop covers Text Diff and
+JSON Diff), `components/pdf/PdfPageWorkspaceTool.tsx` (one `mode` prop
+covers merge/extract/delete/reorder/rotate),
+`components/image/ImageTransformTool.tsx` (seven Edit actions), and
+`components/spreadsheet/SpreadsheetDataApp.tsx` (**all 17** spreadsheet
+tools, since a Studio tool page is a deep-link into the shared Studio app
+rather than a second implementation — see that rule below). The earlier
+`SpreadsheetViewerTool`/`SpreadsheetConverterTool` pair this section used
+to cite was absorbed into `SpreadsheetDataApp` and no longer exists.
 
 **`ProcessingError` across a real Comlink worker boundary needs the
 serialize/reconstruct dance.** DuckDB-WASM never exercised this (it owns
@@ -526,7 +565,10 @@ lint). In order:
 
 ## Current status
 
-Foundation, plus five engines and 78 tools: registry, worker infra, file
+Foundation, plus six engines and **82 tools** — Developer 25, Spreadsheet
+17, Geospatial 15, Image 13, PDF 11, Parquet 1 (`registry/tools/` has one
+file per tool, so `ls | wc -l` is the count; keep this line honest when you
+add one) — registry, worker infra, file
 detection, SEO/analytics/security/error abstractions, shared UI components,
 homepage + 5 category pages (Data Studio, PDF Studio, Image Studio,
 Geospatial Studio, Developer Toolkit — PDF/Image/Geospatial renamed from
@@ -570,13 +612,16 @@ documented exception being `geoJsonToCsv` reusing the Spreadsheet engine's
 tiny `serializeCsv()`). All 4 new tools reuse the pre-existing
 `TextTransformTool` unchanged, same as most of the Text additions above —
 no new UI component needed since none of them require an extra option
-control. This whole Developer Toolkit change and the four Studio
-renames are both display/navigation-only: no tool's own route moved, and
-category *slugs* (`/pdf-tools`, `/image-tools`, `/geospatial-tools`,
-`/developer-tools`) are unchanged — only each `CategoryDefinition.name` in
+control. The Developer Toolkit change and the four Studio *renames* were
+display/navigation-only — only each `CategoryDefinition.name` in
 `registry/categories.ts` changed, which is the single source every page
-title/heading/breadcrumb/nav/OG-tag derives from, so no redirects were
-needed, unlike the Data Tools retirement below. The former separate "Data
+title/heading/breadcrumb/nav/OG-tag derives from. A later pass finished the
+job on the URL side: three of the four Studio slugs (`/pdf-tools`,
+`/image-tools`, `/geospatial-tools`) became `/pdf-studio`,
+`/image-studio`, `/geospatial-studio` so every Studio's URL matches its
+name the way `/data-studio` always did, with permanent redirects for the
+Application pages and their capability sub-paths (see rule 10). No tool's
+own route moved in either pass. The former separate "Data
 Tools" category was retired once Data Studio covered Parquet directly;
 `/data-tools` permanently
 redirects to `/data-studio`, same treatment as `/spreadsheet-tools` before
@@ -599,7 +644,25 @@ sourceIndex, pageIndex, rotationDelta }` references copied into a new PDF);
 Split calls that same primitive once per chosen page range and zips the
 results with `jszip`. PDF page thumbnails lazy-render via
 `components/pdf/PdfThumbnail.tsx` (`IntersectionObserver`, low-res only) to
-keep large PDFs responsive; and the **Image engine** (`src/engines/image/`
+keep large PDFs responsive. All 11 are unified into **PDF Studio**
+(`components/pdf/PdfStudioApp.tsx`, live at `/pdf-studio` and every
+individual tool's own URL) with View/Pages/Convert/Metadata tabs.
+**View** (`PdfViewerTool.tsx`) is a Studio-only capability with no
+standalone tool behind it, added alongside the shared `PdfWorkspace` that
+made it cheap: it reads the document one page at a time through the
+workspace's already-open pdf.js session (`renderThumbnail` is just "render
+this page at most this wide" — Pages asks for 140px, View asks for ~760px),
+re-rendering on zoom rather than laying out every page at once, which the
+Pages tab's thumbnail grid already covers for whole-document overview. View
+also carries **text search**: `session.extractText()` (the same call the
+PDF-to-Text tab makes) returns per-page strings, so finding which pages
+contain a phrase and jumping between them needed no new engine capability —
+extraction is lazy, triggered by the first keystroke, so opening the viewer
+to read never pays for a text pass it may not use. Matches are located per
+*page*, not highlighted in place: highlighting would need pdf.js's text layer
+positioned over the rendered image, a much larger feature than the part
+that's actually hard by hand (finding the right page), and the UI says so
+rather than implying otherwise; and the **Image engine** (`src/engines/image/`
 — native Canvas/`OffscreenCanvas`/`createImageBitmap` in a Comlink worker
 for the whole decode→transform→encode pipeline, no third-party image
 library at all) powering `png-to-jpg`, `jpg-to-png`, `webp-to-jpg`,
@@ -614,7 +677,7 @@ images, get individual downloads plus a combined `.zip` via `jszip`) is
 shared across all format-conversion and edit tools through one component,
 `components/image/ImageBatchList.tsx`. All 13 of those tools are unified
 into **Image Studio** (`components/image/ImageStudioApp.tsx`, live at
-`/image-tools` and every individual tool's own URL) with View/Edit/Convert/
+`/image-studio` and every individual tool's own URL) with View/Edit/Convert/
 Metadata tabs, following the same shell pattern as Data/PDF Studio. The
 Metadata tab hosts a View/Remove `ActionPicker` (`ImageMetadataTool`'s
 `mode: "view" | "remove"` prop, same shape as `PdfMetadataTool`) — "Remove
@@ -638,17 +701,33 @@ anywhere in the codebase — zoom via CSS `transform: scale()` in an
 `overflow-auto` container (no custom pan code needed), plus an
 original-vs-edited compare pane fed by an `editedResult` state lifted into
 `ImageStudioApp` from the Edit tab's `onResult` callback (single-file edits
-only). Watermark is a deliberate placeholder tab, mirroring PDF Studio's
-Security tab, even though (unlike PDF's password-protection block) nothing
-technical prevents building it now — the user's own "watermark placeholder"
-wording asked for this scope explicitly. None of the 5 new/widened pieces
-(crop, brightness, contrast, grayscale, the compare feature) have their own
-registry entry or standalone URL — they're Image Studio-only, reachable
-through `/image-tools`; and the **Geospatial engine**
-(`src/engines/geospatial/`) powering `geojson-viewer`, `geojson-validator`,
-`geojson-simplifier`, `kml-to-geojson`, `geojson-to-kml`, `gpx-viewer`,
-`gpx-to-geojson`, `gpx-to-kml`, `geojson-to-csv`, `csv-to-geojson`, and
-`coordinate-converter` (all under `/geo/*`). Like PDF, it's split across
+only). That compare pane used to need a render-time "auto-load the
+just-edited file into the viewer's own list" adjustment, because the Edit
+and View tabs held two unrelated `File` lists and a re-dropped file would
+never be `===` the edited source; the shared `ImageWorkspace` removed the
+problem rather than the workaround — both tabs now read the same `File`
+objects, so the viewer just opens on the edited one. **Watermark**
+(`ImageWatermarkTool.tsx`) is a real Edit action — text over the finished
+image via `ImageProcessOptions.watermark`, one more additive field on the
+same pipeline, drawn after the colour-adjust pass so it isn't cropped,
+rotated or filtered along with the image. It replaced a permanent "not
+available yet" placeholder; nothing technical had ever blocked it (see the
+placeholder policy below). `fillText`/`measureText` inside a real Worker's
+`OffscreenCanvas` were confirmed empirically before building on them, same
+discipline as the `filter` pass. Its size is a *fraction of the image's
+shorter side*, not a pixel value, so one setting looks right across a batch
+of differently-sized images — the whole point in a batch-first tool. Text
+only: an image watermark would mean decoding a second source in the worker
+plus a second file input, a materially bigger feature. None of the 6
+new/widened pieces (crop, brightness, contrast, grayscale, watermark, the
+compare feature) have their own registry entry or standalone URL — they're
+Image Studio-only, reachable through `/image-studio`; and the **Geospatial engine**
+(`src/engines/geospatial/`) powering all 15 `/geo/*` tools —
+`geojson-viewer`, `geojson-validator`, `geojson-simplifier`,
+`kml-to-geojson`, `geojson-to-kml`, `gpx-viewer`, `gpx-to-geojson`,
+`gpx-to-kml`, `geojson-to-csv`, `csv-to-geojson`, `coordinate-converter`,
+plus the four added later: `crs-converter` (see the CRS section below),
+`geojson-buffer`, `geojson-dissolve` and `geojson-statistics`. Like PDF, it's split across
 both execution models: `ops/*.ts` (summarize/validate/repair/simplify/CSV
 import-export, all pure JSON + `@turf/*`, no DOM dependency) runs in a
 Comlink worker via `worker.ts`/`index.ts`, same shape as Spreadsheet/PDF-
@@ -796,9 +875,9 @@ the one deliberate exception to each engine's XML parsing otherwise staying
 independently duplicated (`xml/parseXml.ts` has its own DOMParser wrapper
 rather than importing the Spreadsheet engine's, keeping the two engines'
 XML handling — including their security properties — independently
-testable and decoupled). All 11 of those tools are unified into
+testable and decoupled). All 15 of those tools are unified into
 **Geospatial Studio** (`components/geo/GeospatialStudioApp.tsx`, live at
-`/geospatial-tools` and every individual tool's own URL) with
+`/geospatial-studio` and every individual tool's own URL) with
 View/Edit/Analyze/Convert tabs, following the same shell pattern as
 Data/PDF/Image Studio. Unlike Image Studio, this unification needed zero
 new engine code — every capability the spec asked for already existed as
@@ -820,11 +899,12 @@ new UI with no prior art — it composes `summarizeGeoJson()` and
 read-only view; CRS is shown as a labeled constant ("WGS84 (EPSG:4326)"),
 not a per-file detected value, since grepping the whole engine for "crs"
 turns up nothing — GeoJSON (RFC 7946) and everything normalized through
-this app's KML/GPX converters is always WGS84. Coordinate Editing is a
-deliberate placeholder tab, mirroring PDF Studio's Security tab and Image
-Studio's Watermark tab — confirmed nothing to reuse (`package.json` has no
-map-drawing library, and no component exposes any selection/edit
-affordance on the map). A new shared helper,
+this app's KML/GPX converters is always WGS84. A "Coordinate Editing" Edit action was a
+placeholder here and has been **removed** — drawing/editing geometry on the
+map needs a map-editing library this project doesn't have (`package.json` has
+no map-drawing dependency, and no component exposes any selection/edit
+affordance on the map), so it was never going to ship as written. See the
+placeholder policy below. A new shared helper,
 `components/geo/parseAnyGeoFile.ts`, detects a dropped file's format and
 routes it through the right existing parser for both View and Analyze —
 building it surfaced a real, previously-latent bug in
@@ -876,8 +956,8 @@ on the `diff` package's `diffLines` *and* `diffJson` (the latter
 canonicalizes/sorts keys and pretty-prints before line-diffing, so JSON
 Diff is a thin reuse of the same library rather than a hand-rolled
 recursive structural differ). `sql-formatter` (SQL Formatter) and
-`csv-to-insert.ts` (CSV to SQL INSERT) never execute or connect to a
-database — they only ever transform text; `csv-to-insert.ts`'s SQL
+`engines/developer/sql/csvToInsert.ts` (CSV to SQL INSERT) never execute or connect to a
+database — they only ever transform text; `engines/developer/sql/csvToInsert.ts`'s SQL
 injection defense is structural, not best-effort: every identifier and
 string value is escaped by doubling its delimiter before being spliced into
 the output, verified with a test asserting a crafted table name containing
@@ -957,13 +1037,13 @@ the DuckDB/pdf.js assets above, rather than Google Fonts' CDN (which the
 CSP blocks anyway). See `PRIVACY_ARCHITECTURE.md`'s dependency table for
 the network-inertness verification of both packages.
 
-All four Studio pages (`/data-studio`, `/pdf-tools`, `/image-tools`,
-`/geospatial-tools`) render through one generic page-level shell,
+All four Studio pages (`/data-studio`, `/pdf-studio`, `/image-studio`,
+`/geospatial-studio`) render through one generic page-level shell,
 `components/studio/StudioLayout.tsx` — the Application-level counterpart to
 `ToolPageLayout` (which plays the same role one level down, for individual
 tool pages). It owns breadcrumbs, the header (title, on-page description,
 `LocalProcessingBadge`), the ad slot, FAQ and related-actions sections, and
-the consistent `max-w-[54rem]` spacing described below — and has zero
+the shared `PageContainer` width described below — and has zero
 per-Studio knowledge itself. It deliberately renders **no** "Browse by
 capability" nav and **no** `RelatedApplications` block: both existed and
 were removed as unwanted page furniture on the Application pages
@@ -1048,17 +1128,56 @@ consequence devalues the self-intersection and degenerate-ring findings
 beside it. Keeping "a clean file reports no problems" true is worth more than
 spec completeness — the same judgment applies to any future validator rule.
 
-**Geospatial Studio's file lives in one shared `GeoWorkspace`, not in each
-tool.** `components/geo/GeoWorkspace.tsx` is a context provider that owns the
-loaded file, its detected format, the parsed GeoJSON (or CSV table) and the
-bbox. Every geo tool is presentational: it reads `useGeoWorkspace()` and
-renders only its own options and results.
-- **Why:** each tool used to own its own `file` state *and* its own
-  `FileDropZone`, so switching tabs unmounted the tool and silently discarded
-  the user's file — they had to re-drop it for every operation. Data Studio
-  never had this problem because `SpreadsheetDataApp` owns the file centrally;
-  this gives the Geospatial engine the same property without collapsing its
-  ten genuinely-different tool UIs into one component.
+**Every Studio owns its loaded file centrally — a tool never owns a file or
+a `FileDropZone` of its own.** This is a hard rule now, not a per-Studio
+choice: dropping a file once and moving between tabs (and between actions
+within a tab) must never silently discard it. Data Studio has always had
+this by being one component; the other three each have a context provider
+plus a drop-zone panel the Studio renders inside its shell:
+
+| Studio | Provider / hook | Drop-zone panel |
+| --- | --- | --- |
+| Data | `SpreadsheetDataApp` owns `file` directly | its own inline `FileDropZone` |
+| PDF | `components/pdf/PdfWorkspace.tsx` — `usePdfWorkspace()` | `PdfFilePanel` |
+| Image | `components/image/ImageWorkspace.tsx` — `useImageWorkspace()` | `ImageFilePanel` |
+| Geospatial | `components/geo/GeoWorkspace.tsx` — `useGeoWorkspace()` | `GeoFilePanel` |
+
+The three providers deliberately share one shape, so a fix or a new
+affordance in one reads the same in the others: `documentKey` (bumped on
+every load and clear, folded into each tool's React `key` so a new file
+remounts the tool instead of needing a reset effect), a `clear()`, a
+`load…()` and a panel rendered by the Studio *below* its tab bar and action
+picker. Points specific to one of them:
+- **PDF's workspace also owns the pdf.js render session**
+  (`openPdfRenderSession`), not just the `File`. Each tool used to open its
+  own — and PDF→Images/PDF→Text opened *and closed* one per run — so the
+  same document was parsed two or three times in a session. A tool must
+  never `close()` a session it didn't open; the workspace closes them on
+  replace, clear and unmount. Sharing it is also what made the View tab
+  (`PdfViewerTool`) essentially free. The workspace exposes
+  `currentLoadToken()` — a function, so a post-`await` read sees the live
+  value — which replaced the stale-request guard `PdfPageWorkspaceTool` and
+  `PdfSplitTool` each kept privately when they still owned the load.
+  Merge is the one action that *appends* rather than replaces
+  (`loadFiles(files, { append: true })`), and `PdfPageWorkspaceTool` tells
+  an append from a replacement by array-prefix identity so a user's page
+  reordering survives adding another file.
+- **Image's workspace detects each file's format on load**, because that's
+  what gates the actions (`components/image/actionFormats.ts`, modelled on
+  the geo one): "WebP to JPG" can't run on a PNG, SVG to PNG needs an SVG,
+  and no pixel-level Edit action can run on an SVG at all. Each tool used
+  to encode this implicitly in its own drop zone's `accept` attribute,
+  which stops meaning anything once one shared drop zone feeds every
+  action. **Don't narrow the shared drop zone's `accept` per action on the
+  Studio itself** — only on a locked tool page. Narrowing it on the hub
+  makes a gated-out action unreachable: with a PNG loaded, "SVG to PNG" is
+  disabled *and* the picker wouldn't offer the SVG that would re-enable it,
+  leaving Clear as the only way out.
+- **Why Geospatial did it first:** each geo tool used to own its own `file`
+  state *and* its own `FileDropZone`, so switching tabs unmounted the tool
+  and silently discarded the user's file — they had to re-drop it for every
+  operation. PDF and Image had exactly the same bug (Merge → Split lost the
+  PDF) and were fixed the same way rather than each inventing its own.
 - **The drop zone is `GeoFilePanel`, a separate export the Studio renders
   inside its own shell** — under the tab bar and action picker, matching the
   order Data/PDF/Image Studio use (tabs → action picker → drop zone → the
@@ -1069,7 +1188,15 @@ renders only its own options and results.
   `<GeoWorkspace><GeoFilePanel /></GeoWorkspace>`; for tests that only care
   about the tool, `GeoWorkspaceContext` is exported so
   `tests/component/geoWorkspaceHarness.tsx` can inject an already-loaded
-  document directly.
+  document directly. The PDF and Image equivalents
+  (`tests/component/pdfWorkspaceHarness.tsx`,
+  `imageWorkspaceHarness.tsx`) deliberately take the *first* route —
+  provider + real panel — because those component tests already mock only
+  the engine calls (`inspectPdfFile`, `openPdfRenderSession`,
+  `detectFileType`) and so still exercise the real drop → load → tool path
+  end to end. One consequence worth knowing before writing one: loading is
+  now asynchronous even for the image tools (format detection), so a test
+  has to `await` the selection before the tool's controls exist.
 - **`actionNeedsFile()` decides whether the drop zone renders at all.** The
   coordinate converter works on pasted text, so a drop zone above it would
   imply a file it never reads — the same rule Data Studio applies to its
@@ -1125,6 +1252,61 @@ regress:
   an addition of `"a\nb"` rather than a shared `"a"`, and marking that as a
   change would highlight an edit where nothing changed.
 
+**Tabs are tabs; pickers are not.** Two shared controls look alike and are
+deliberately different underneath — get this right when adding a third.
+- **`Toolbar`** (a Studio's top-level View/Edit/Convert/… bar) is a real ARIA
+  Tabs implementation: `role="tablist"`/`role="tab"`, `aria-controls`
+  pointing at `AppShell`'s `role="tabpanel"` (which carries the matching
+  `aria-labelledby`), roving `tabindex` so Tab moves *past* the bar rather
+  than through every mode, and Arrow/Home/End to move between tabs. The ids
+  linking the two live in `components/app-shell/tabIds.ts` as fixed strings,
+  not `useId` — `Toolbar` and `AppShell` are siblings that never see each
+  other's props, exactly one `AppShell` renders per page, and fixed ids are
+  stable across server/client render. `AppShell` only takes tab semantics
+  when given `activeTabId`, so a future non-tabbed consumer isn't forced
+  into them.
+- **`ActionPicker`** (the second-level Merge/Split/… picker) is a
+  **`role="radiogroup"`**, not a second tablist. It used to claim `role="tab"`
+  with no panel anywhere, which is an incomplete pattern that actively
+  misleads: a screen reader announced a tab controlling a panel that didn't
+  exist. And it genuinely isn't a tab set — the Studio's one shared drop zone
+  (`PdfFilePanel`/`ImageFilePanel`/`GeoFilePanel`) sits *between* the picker
+  and the tool it selects and belongs to every action equally, so there is no
+  discrete panel for a `tab` to own. It picks a variant of one
+  already-labelled panel, which is what a radio group is for.
+- **Consequence for tests:** a Studio's top-level tabs are
+  `getByRole("tab")`; its actions are `getByRole("radio")` with
+  `aria-checked`. `[aria-label="Action"]` still identifies the picker either
+  way, which is why the "a locked page hides its picker" assertions were
+  unaffected.
+
+**A green Playwright run does not mean the app looks right in `npm run dev`.**
+The suite builds for production, where React Strict Mode doesn't
+double-invoke effects — so a whole class of dev-only bug is invisible to it.
+Two have been found by actually opening the dev server: `GeoMap.tsx`'s
+`relative` class (a stale teardown stripping a class the live map needed) and
+`ImageBatchList`'s preview URLs (revoked on unmount with an empty dep array,
+so Strict Mode's mount → cleanup → mount left every image tool's result
+thumbnail broken). If you create an object URL in a `useState` initializer,
+do not revoke it in an unmount cleanup — the URLs outlive that cycle while
+the state does too. Look at the running dev server after UI work.
+
+**Don't ship a placeholder that can't become real.** A tab or action whose
+whole content is "not available yet" costs every visitor attention on every
+visit, and the three that existed were each resolved by asking one question:
+*is this blocked by the architecture, or just unbuilt?*
+- **Unbuilt → build it.** Image Studio's Watermark had no technical blocker
+  at all; the pipeline already composited and the worker could already draw
+  text. It's now a real Edit action.
+- **Blocked → remove it.** PDF Studio's Security tab (pdf-lib can detect
+  encryption but cannot write it) and Geospatial Studio's Coordinate Editing
+  action (needs a map-editing dependency this project doesn't have) were
+  deleted, along with the `security` capability in `registry/studios.ts`.
+  The FAQ answers them honestly instead — "No. The library this app uses …
+  cannot write it" beats a tab that promises later.
+- If a placeholder is genuinely wanted as a roadmap signal, it belongs in
+  `README.txt`'s "Potential later tools" list, not in the running UI.
+
 **A Studio tool's page is a deep-link entry point into the shared Studio
 app, never a second implementation of it.** Each Studio has exactly one
 UI implementation (`SpreadsheetDataApp`, `PdfStudioApp`, `ImageStudioApp`,
@@ -1159,7 +1341,7 @@ lockedPagesAction="merge" />`, and so on.
 
 **The site's URL hierarchy is four levels: Home → Application → Capability
 → Tool**, and every level is a real, crawlable, individually-indexed page.
-The Capability level (`/{categorySlug}/{capability}` — `/pdf-tools/pages`,
+The Capability level (`/{categorySlug}/{capability}` — `/pdf-studio/pages`,
 `/data-studio/convert`, …) was added by a 2026 SEO review; before it, a
 Studio's capabilities were client-side tabs with no URL at all, so the only
 crawlable path from an Application to a tool was the Application page's one
@@ -1284,21 +1466,57 @@ entry has `engine: "parquet"` directly. Runs entirely client-side (filters
 registry data already in the bundle) — no network request, no server-side
 index.
 
-Every page's content column — homepage, every category page (`CategoryPage.tsx`),
-every individual tool page (`ToolPageLayout.tsx`), the Spreadsheet & Data
-app hub (`app/spreadsheet-tools/page.tsx`), even `not-found.tsx` — is a
-fixed `mx-auto max-w-[54rem]` (864px), deliberately the *same* width
-whether or not a file/table is loaded. An earlier version widened the
-Spreadsheet & Data app once a table loaded (via a since-deleted
-`WideBreakout.tsx` full-bleed technique); that was reverted because an
-unpredictable page width conflicts with reserving stable side margins for
-ads (below) — 864px, not Tailwind's default 768px (`max-w-3xl`), was
-chosen by measuring real side-margin space at common viewport widths in an
-actual browser: it's the widest column that still leaves both side-rail
-ads a full 160px + 24px gap at 1280px (the narrowest width they show at),
-without the margin getting uncomfortably tight at 1366×768 — the single
-most common laptop resolution, and the reason the rails' visibility
-threshold wasn't just raised instead of capping the column width.
+**Page width lives in `components/layout/PageContainer.tsx`, and nowhere
+else.** Every page — homepage, the four Studios (`StudioLayout`), every
+tool page (`ToolPageLayout`), every capability index
+(`CapabilityPageContent`) and Developer Toolkit sub-category page
+(`DevCategoryPageContent`) — wraps its content in `<PageContainer>`. Don't
+hardcode a width on a page; add it here if a genuinely new one is needed.
+
+- **`PageContainer`** is the wide application container: fluid, capped at
+  **1520px**, with the side-rail gutter reserved as horizontal padding
+  (`xl:px-[12.5rem]`) so a rail can never overlap the column. Effectively
+  `min(1520px, 100vw − 2 × gutter)` — 1920px viewport → 1520px column,
+  1600px → 1200px, 1366px → 966px, below `xl` → full width minus normal
+  padding (no rails exist there to make room for).
+- **`ProseContainer`** is the narrow reading width (54rem) for text that's
+  *read* rather than operated, nested inside a `PageContainer` where a wide
+  page has a prose section. A wide page can and should still have narrow
+  prose. **Applied in the shared components, not at each call site** —
+  `FAQ.tsx` and `ToolInstructions.tsx` wrap themselves, so every one of the
+  ~80 pages that renders an FAQ gets a readable measure automatically and a
+  new page can't forget. Page headers wrap their description paragraph the
+  same way (`ToolPageLayout`, `StudioLayout`, `CapabilityPageContent`,
+  `DevCategoryPageContent`); `not-found.tsx` is a pure reading page and uses
+  `ProseContainer` directly instead of `PageContainer`.
+  **Never wrap an interactive region in it** — tables, maps, grids, drop
+  zones, thumbnail grids and previews are what the wide column is *for*.
+  `tests/e2e/layout.spec.ts` asserts both halves: the application column
+  grows past 1200px at 1920px wide, while an FAQ answer stays ≤864px.
+
+This replaced a fixed `mx-auto max-w-[54rem]` (864px) column that every
+page hardcoded separately, with `SideRailAds` separately hardcoding half of
+that same number (`calc(50% ± 28.5rem)`) to position itself. Two files
+silently agreeing on one measurement by hand is exactly why an earlier
+wide-layout attempt (a since-deleted `WideBreakout.tsx` full-bleed
+technique in the Data Studio app) was reverted rather than fixed. The
+direction of the dependency is now the point: the container owns the
+gutter and the rails sit inside it, not the other way round.
+
+**The honest limitation, worth knowing before "just make it wider":**
+between 1280px and ~1450px the two rails cost 400px, so the gain over the
+old fixed column is modest at exactly the laptop widths most users have.
+That's inherent to keeping both — a full-bleed 1800px column means
+dropping the rails, which is a monetization decision (README.txt §37), not
+a layout one.
+
+**What must stay true regardless of width:** the column is the *same* width
+whether or not a file/table is loaded. `spreadsheet-app.spec.ts` and
+`parquet-viewer.spec.ts` both assert this (before load, after load, and
+against another Studio page), because a column that jumps when data
+arrives is what makes reserved ad margins unstable — the original reason
+for the fixed width, and still the constraint even now that the width is
+fluid.
 
 `components/layout/SideRailAds.tsx`, rendered once in the root layout
 (`app/layout.tsx`) so every page gets it automatically, adds two reserved
@@ -1306,9 +1524,23 @@ threshold wasn't just raised instead of capping the column width.
 (`components/tools/AdSlot.tsx`'s `DIMENSIONS` map) — matching every other
 `AdSlot` in being `aria-hidden`, non-interactive, and a placeholder only
 (README.txt §37: no real ad network wired in yet). Each rail is
-`position: fixed`, vertically centered, and `hidden xl:block` (≥1280px,
-the narrowest width with room for a 160px unit without crowding the
-content column); its horizontal offset is computed from viewport center
-via `calc(50% ± 28.5rem)` (half the 864px column plus a 24px gap) rather
-than measured from the DOM, so it stays exactly aligned with the content
-column on every page without a layout-measurement pass.
+`position: fixed`, vertically centered, `hidden xl:block` (≥1280px — the
+same breakpoint at which `PageContainer` starts reserving gutter space for
+them, so the two can't disagree about whether a rail has room), and pinned
+`1rem` from its viewport edge rather than computed from the content column.
+
+**`left-rail` renders on the left.** It didn't until a 2026 review: the slot
+named `left-rail` was positioned with `right: …` and vice versa. Invisible
+while `AdSlot` only reserves space, but a placement name is what an ad
+network reports and targets on, so every impression would have been
+mislabelled the moment one was wired in. Each rail carries `data-rail="left"`
+/`"right"` so the regression test asserts its *real* geometry rather than
+trusting the name.
+
+**`tests/e2e/layout.spec.ts` is the guard for all of this** — it checks, at
+1280/1440/1920 across one page per layout shell, that neither rail overlaps
+the content column (measured via `PageContainer`'s own
+`data-content-column` marker), that each is on the side it claims, that
+neither hangs off the viewport, and that below `xl` no rail renders and no
+gutter is reserved. Two files have to agree on one measurement here and
+nothing in the type system connects them; this is what connects them.

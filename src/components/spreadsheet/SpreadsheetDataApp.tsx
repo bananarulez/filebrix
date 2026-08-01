@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/app-shell/AppShell";
 import { Toolbar, type ToolbarModeOption } from "@/components/app-shell/Toolbar";
+import { studioTabId } from "@/components/app-shell/tabIds";
 import { ActionPicker } from "@/components/app-shell/ActionPicker";
 import { UndoRedoControls } from "@/components/app-shell/UndoRedoControls";
 import { EditOperationList } from "@/components/app-shell/EditOperationList";
@@ -772,6 +773,7 @@ export function SpreadsheetDataApp({
 
   return (
     <AppShell
+      activeTabId={studioTabId(mode)}
       toolbar={
         <Toolbar
           modes={MODE_OPTIONS}

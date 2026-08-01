@@ -1,11 +1,16 @@
 import Link from "next/link";
 import { getAppNavItems } from "@/registry/navigation";
+import { ProseContainer } from "@/components/layout/PageContainer";
 
 // Next.js serves this with a 404 status automatically for any unmatched
 // route or explicit notFound() call — no extra wiring needed here.
+//
+// A pure reading page, so it uses `ProseContainer` directly rather than
+// `PageContainer` — it has no wide content to lay out, and it used to
+// hardcode the same 54rem the container now owns.
 export default function NotFound() {
   return (
-    <div className="mx-auto flex w-full max-w-[54rem] flex-col items-center gap-6 px-4 py-20 text-center">
+    <ProseContainer className="mx-auto flex flex-col items-center gap-6 px-4 py-20 text-center">
       <h1 className="text-3xl font-semibold">Page not found</h1>
       <p className="max-w-md text-gray-600 dark:text-gray-300">
         We couldn&apos;t find that page. It may have moved, or the link may be out of date — your file
@@ -28,6 +33,6 @@ export default function NotFound() {
           </Link>
         ))}
       </nav>
-    </div>
+    </ProseContainer>
   );
 }

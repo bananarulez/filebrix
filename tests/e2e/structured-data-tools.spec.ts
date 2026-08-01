@@ -266,10 +266,10 @@ test.describe("Data Studio deep-link entry points", () => {
   test("the unlocked Studio hub exposes the same tools as in-app actions", async ({ page }) => {
     await page.goto("/data-studio");
     await page.getByRole("tab", { name: "Editor", exact: true }).click();
-    await expect(page.getByRole("tab", { name: "JSON Formatter", exact: true })).toBeVisible();
+    await expect(page.getByRole("radio", { name: "JSON Formatter", exact: true })).toBeVisible();
 
     // Selecting the action in-app gives the identical working tool.
-    await page.getByRole("tab", { name: "JSON Formatter", exact: true }).click();
+    await page.getByRole("radio", { name: "JSON Formatter", exact: true }).click();
     await page.getByLabel("JSON input").fill('{"b":2,"a":1}');
     await page.getByRole("button", { name: "Format", exact: true }).click();
     await expect(page.getByLabel("Formatted JSON")).toHaveValue('{\n  "b": 2,\n  "a": 1\n}');

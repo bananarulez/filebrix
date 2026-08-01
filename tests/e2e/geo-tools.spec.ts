@@ -417,9 +417,9 @@ test("user geometries and coordinates are never sent over the network — only b
   }
 });
 
-test.describe("Geospatial Studio hub (/geospatial-tools)", () => {
+test.describe("Geospatial Studio hub (/geospatial-studio)", () => {
   test("View renders the right viewer for whichever format is loaded", async ({ page }) => {
-    await page.goto("/geospatial-tools");
+    await page.goto("/geospatial-studio");
     await page.getByRole("tab", { name: "View", exact: true }).click();
 
     await page.locator('input[type="file"]').setInputFiles(fixture("sample.geojson"));
@@ -431,12 +431,12 @@ test.describe("Geospatial Studio hub (/geospatial-tools)", () => {
     // differ from the others.
     await page.locator('input[type="file"]').setInputFiles(fixture("sample.gpx"));
     await expect(page.getByText(/distance/i).first()).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole("tab", { name: "GPX", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("tab", { name: "GeoJSON / KML", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("radio", { name: "GPX", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("radio", { name: "GeoJSON / KML", exact: true })).toHaveCount(0);
   });
 
   test("View tab's widened GeoJSON viewer also accepts a KML file", async ({ page }) => {
-    await page.goto("/geospatial-tools");
+    await page.goto("/geospatial-studio");
     await page.getByRole("tab", { name: "View", exact: true }).click();
 
     await page.locator('input[type="file"]').first().setInputFiles(fixture("sample.kml"));
@@ -447,48 +447,32 @@ test.describe("Geospatial Studio hub (/geospatial-tools)", () => {
   test("Edit tab's action picker switches between Simplify and Validate & Repair, each rendering its own unchanged UI", async ({
     page,
   }) => {
-    await page.goto("/geospatial-tools");
+    await page.goto("/geospatial-studio");
     await page.getByRole("tab", { name: "Edit", exact: true }).click();
 
-    await page.getByRole("tab", { name: "Simplify", exact: true }).click();
+    await page.getByRole("radio", { name: "Simplify", exact: true }).click();
     await page.locator('input[type="file"]').first().setInputFiles(fixture("sample.geojson"));
     await expect(page.getByText(/tolerance/i).first()).toBeVisible({ timeout: 15_000 });
 
-    await page.getByRole("tab", { name: "Validate & Repair", exact: true }).click();
+    await page.getByRole("radio", { name: "Validate & Repair", exact: true }).click();
     await page.locator('input[type="file"]').first().setInputFiles(fixture("repairable.geojson"));
     await expect(page.getByRole("button", { name: "Repair automatically" })).toBeVisible({ timeout: 15_000 });
   });
 
-  test("Coordinate Editing shows a placeholder — no file drop, no engine call, no off-origin network activity", async ({
-    page,
-    baseURL,
-  }) => {
-    const externalRequests: string[] = [];
-    const baseOrigin = baseURL ? new URL(baseURL).origin : null;
-    page.on("request", (request) => {
-      const url = new URL(request.url());
-      if (baseOrigin && url.origin !== baseOrigin) externalRequests.push(request.url());
-    });
-
-    await page.goto("/geospatial-tools");
+  test("the removed Coordinate Editing placeholder is gone from the Edit actions", async ({ page }) => {
+    // Drawing/editing geometry on the map needs a map-editing library this
+    // project doesn't have and wouldn't add lightly, so the action was removed
+    // rather than left as a permanent "not available yet".
+    await page.goto("/geospatial-studio");
     await page.getByRole("tab", { name: "Edit", exact: true }).click();
-    await page.getByRole("tab", { name: "Coordinate Editing", exact: true }).click();
-
-    await expect(page.getByText(/isn.t available yet/i)).toBeVisible();
-    // The Studio's single shared drop zone is always present now, so this no
-    // longer asserts "no file input on the page" — what still matters, and is
-    // what this test is really about, is that the placeholder itself does no
-    // work: no engine call and no off-origin request.
-    await expect(page.locator('input[type="file"]')).toHaveCount(1);
-
-    await page.waitForTimeout(500);
-    expect(externalRequests).toEqual([]);
+    await expect(page.getByRole("radio", { name: "Coordinate Editing", exact: true })).toHaveCount(0);
+    await expect(page.getByText(/isn.t available yet/i)).toHaveCount(0);
   });
 
   test("Analyze tab shows feature count, geometry types, CRS, bounding box, attribute summary and validation status", async ({
     page,
   }) => {
-    await page.goto("/geospatial-tools");
+    await page.goto("/geospatial-studio");
     await page.getByRole("tab", { name: "Analyze", exact: true }).click();
     await page.locator('input[type="file"]').first().setInputFiles(fixture("sample.geojson"));
 
@@ -505,14 +489,14 @@ test.describe("Geospatial Studio hub (/geospatial-tools)", () => {
   });
 
   test("Convert tab's action picker switches between all 7 converters", async ({ page }) => {
-    await page.goto("/geospatial-tools");
+    await page.goto("/geospatial-studio");
     await page.getByRole("tab", { name: "Convert", exact: true }).click();
 
-    await page.getByRole("tab", { name: "KML to GeoJSON", exact: true }).click();
+    await page.getByRole("radio", { name: "KML to GeoJSON", exact: true }).click();
     await page.locator('input[type="file"]').first().setInputFiles(fixture("sample.kml"));
     await expect(page.getByRole("button", { name: "Download .geojson" })).toBeVisible({ timeout: 15_000 });
 
-    await page.getByRole("tab", { name: "Coordinate Converter", exact: true }).click();
+    await page.getByRole("radio", { name: "Coordinate Converter", exact: true }).click();
     await expect(page.locator("textarea#coordinate-input")).toBeVisible();
   });
 
@@ -523,7 +507,7 @@ test.describe("Geospatial Studio hub (/geospatial-tools)", () => {
     await expect(page.locator('[aria-label="Action"]')).toHaveCount(0);
 
     await page.getByRole("tab", { name: "Convert", exact: true }).click();
-    await expect(page.getByRole("tab", { name: "KML to GeoJSON", exact: true })).toBeVisible();
+    await expect(page.getByRole("radio", { name: "KML to GeoJSON", exact: true })).toBeVisible();
   });
 });
 
@@ -612,9 +596,9 @@ test.describe("Geospatial Studio — geometry operations", () => {
   });
 
   test("split multi geometry runs from the Studio's own Edit action picker", async ({ page }) => {
-    await page.goto("/geospatial-tools");
+    await page.goto("/geospatial-studio");
     await page.getByRole("tab", { name: "Edit", exact: true }).click();
-    await page.getByRole("tab", { name: "Split Multi", exact: true }).click();
+    await page.getByRole("radio", { name: "Split Multi", exact: true }).click();
     await page.locator('input[type="file"]').first().setInputFiles(fixture("squares.geojson"));
     await page.getByRole("button", { name: "Split Multi Geometry", exact: true }).click({ timeout: 20_000 });
     await expect(page.getByRole("button", { name: /Download split multi geometry result/i })).toBeVisible({
@@ -637,14 +621,14 @@ test.describe("Geospatial Studio — analysis", () => {
   });
 
   test("centroid, bounding box and convex hull are reachable as Analyze actions", async ({ page }) => {
-    await page.goto("/geospatial-tools");
+    await page.goto("/geospatial-studio");
     await page.getByRole("tab", { name: "Analyze", exact: true }).click();
 
     for (const action of ["Centroid", "Bounding Box", "Convex Hull"]) {
-      await expect(page.getByRole("tab", { name: action, exact: true })).toBeVisible();
+      await expect(page.getByRole("radio", { name: action, exact: true })).toBeVisible();
     }
 
-    await page.getByRole("tab", { name: "Convex Hull", exact: true }).click();
+    await page.getByRole("radio", { name: "Convex Hull", exact: true }).click();
     await page.locator('input[type="file"]').first().setInputFiles(fixture("squares.geojson"));
     await page.getByRole("button", { name: "Convex Hull", exact: true }).click({ timeout: 20_000 });
     await expect(page.getByRole("button", { name: /Download convex hull result/i })).toBeVisible({ timeout: 25_000 });
@@ -661,7 +645,7 @@ test.describe("Geospatial Studio — geometry validation", () => {
 });
 
 test("the expansion adds no new top-level tabs — everything lives under the existing four", async ({ page }) => {
-  await page.goto("/geospatial-tools");
+  await page.goto("/geospatial-studio");
   const tabs = page.locator('[role="tablist"][aria-label="Application mode"] [role="tab"]');
   await expect(tabs).toHaveCount(4);
   await expect(tabs).toHaveText(["View", "Edit", "Analyze", "Convert"]);
@@ -677,7 +661,7 @@ test("the expansion adds no new top-level tabs — everything lives under the ex
  */
 test.describe("Geospatial Studio — shared file workspace", () => {
   test("there is exactly one drop zone, and the file survives every tab switch", async ({ page }) => {
-    await page.goto("/geospatial-tools");
+    await page.goto("/geospatial-studio");
     await expect(page.locator('input[type="file"]')).toHaveCount(1);
 
     await page.locator('input[type="file"]').setInputFiles(fixture("squares.geojson"));
@@ -692,22 +676,22 @@ test.describe("Geospatial Studio — shared file workspace", () => {
   });
 
   test("a tool runs off the shared file without it being re-dropped", async ({ page }) => {
-    await page.goto("/geospatial-tools");
+    await page.goto("/geospatial-studio");
     await page.locator('input[type="file"]').setInputFiles(fixture("squares.geojson"));
     await expect(page.getByText(/Detected: GeoJSON/)).toBeVisible({ timeout: 20_000 });
 
     await page.getByRole("tab", { name: "Analyze", exact: true }).click();
-    await page.getByRole("tab", { name: "Statistics", exact: true }).click();
+    await page.getByRole("radio", { name: "Statistics", exact: true }).click();
     await expect(page.getByText("Total length")).toBeVisible({ timeout: 20_000 });
   });
 
   test("actions the loaded format can't support are disabled and explain why", async ({ page }) => {
-    await page.goto("/geospatial-tools");
+    await page.goto("/geospatial-studio");
     await page.locator('input[type="file"]').setInputFiles(fixture("squares.geojson"));
     await expect(page.getByText(/Detected: GeoJSON/)).toBeVisible({ timeout: 20_000 });
 
     await page.getByRole("tab", { name: "Convert", exact: true }).click();
-    const kmlAction = page.getByRole("tab", { name: "KML to GeoJSON", exact: true });
+    const kmlAction = page.getByRole("radio", { name: "KML to GeoJSON", exact: true });
     await expect(kmlAction).toHaveAttribute("aria-disabled", "true");
     // The tooltip is the whole point — a disabled control with no explanation
     // is worse than none.
@@ -717,16 +701,16 @@ test.describe("Geospatial Studio — shared file workspace", () => {
     // which is already evidence the state is real; this proves the click is
     // additionally a no-op in the app's own handler.
     await kmlAction.click({ force: true });
-    await expect(kmlAction).toHaveAttribute("aria-selected", "false");
+    await expect(kmlAction).toHaveAttribute("aria-checked", "false");
 
-    await expect(page.getByRole("tab", { name: "GeoJSON to KML", exact: true })).not.toHaveAttribute(
+    await expect(page.getByRole("radio", { name: "GeoJSON to KML", exact: true })).not.toHaveAttribute(
       "aria-disabled",
       "true"
     );
   });
 
   test("gating flips when a different format is loaded", async ({ page }) => {
-    await page.goto("/geospatial-tools");
+    await page.goto("/geospatial-studio");
     await page.locator('input[type="file"]').setInputFiles(fixture("squares.geojson"));
     await expect(page.getByText(/Detected: GeoJSON/)).toBeVisible({ timeout: 20_000 });
 
@@ -734,11 +718,11 @@ test.describe("Geospatial Studio — shared file workspace", () => {
     await expect(page.getByText(/Detected: GPX/)).toBeVisible({ timeout: 20_000 });
 
     await page.getByRole("tab", { name: "Convert", exact: true }).click();
-    await expect(page.getByRole("tab", { name: "GPX to GeoJSON", exact: true })).not.toHaveAttribute(
+    await expect(page.getByRole("radio", { name: "GPX to GeoJSON", exact: true })).not.toHaveAttribute(
       "aria-disabled",
       "true"
     );
-    await expect(page.getByRole("tab", { name: "GeoJSON to KML", exact: true })).toHaveAttribute(
+    await expect(page.getByRole("radio", { name: "GeoJSON to KML", exact: true })).toHaveAttribute(
       "aria-disabled",
       "true"
     );
@@ -750,7 +734,7 @@ test.describe("Geospatial Studio — shared file workspace", () => {
   });
 
   test("the drop zone sits below the tab bar, like every other Studio", async ({ page }) => {
-    await page.goto("/geospatial-tools");
+    await page.goto("/geospatial-studio");
 
     const tabBar = page.getByRole("tab", { name: "Convert", exact: true });
     const dropZone = page.getByText("Drop a GeoJSON, KML, GPX or CSV file here");
@@ -765,11 +749,11 @@ test.describe("Geospatial Studio — shared file workspace", () => {
   test("a paste-only action hides the drop zone instead of implying a file is needed", async ({
     page,
   }) => {
-    await page.goto("/geospatial-tools");
+    await page.goto("/geospatial-studio");
     await page.getByRole("tab", { name: "Convert", exact: true }).click();
     await expect(page.getByText("Drop a GeoJSON, KML, GPX or CSV file here")).toBeVisible();
 
-    await page.getByRole("tab", { name: "Coordinate Converter", exact: true }).click();
+    await page.getByRole("radio", { name: "Coordinate Converter", exact: true }).click();
     await expect(page.getByText("Drop a GeoJSON, KML, GPX or CSV file here")).toHaveCount(0);
   });
 });

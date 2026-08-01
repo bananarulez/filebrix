@@ -17,7 +17,7 @@ describe("SiteSearch", () => {
     typeQuery("PDF");
 
     const appLink = screen.getByRole("link", { name: "PDF Studio" });
-    expect(appLink).toHaveAttribute("href", "/pdf-tools");
+    expect(appLink).toHaveAttribute("href", "/pdf-studio");
     expect(screen.getAllByText("Application")).toHaveLength(1);
 
     const items = screen.getAllByRole("listitem");
@@ -31,7 +31,7 @@ describe("SiteSearch", () => {
     render(<SiteSearch />);
     typeQuery("Resize");
 
-    expect(screen.getByRole("link", { name: "Image Studio" })).toHaveAttribute("href", "/image-tools");
+    expect(screen.getByRole("link", { name: "Image Studio" })).toHaveAttribute("href", "/image-studio");
     expect(screen.getByRole("link", { name: "Resize Image" })).toHaveAttribute(
       "href",
       "/tools/resize-image"

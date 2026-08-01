@@ -1,90 +1,60 @@
 "use client";
 
-import { useState } from "react";
-import { FileDropZone } from "@/components/tools/FileDropZone";
-import { FileInfo } from "@/components/tools/FileInfo";
-import { ProcessingStatus, type ProcessingState } from "@/components/tools/ProcessingStatus";
+import { useEffect, useState } from "react";
+import { ProcessingStatus } from "@/components/tools/ProcessingStatus";
 import { ErrorPanel } from "@/components/tools/ErrorPanel";
 import { ImageBatchList } from "./ImageBatchList";
+import { useImageWorkspace } from "./ImageWorkspace";
 import { readImageMetadata, type ImageMetadataInfo } from "@/engines/image/render/metadata";
 import { processImageFile } from "@/engines/image";
 import { detectFileType } from "@/lib/detect/detectFile";
 import { ProcessingError, type ProcessingErrorCode } from "@/lib/errors/ProcessingError";
 
-type ViewState =
-  | { status: Exclude<ProcessingState, "error"> }
-  | { status: "error"; message: string; code?: ProcessingErrorCode };
+interface ToolError {
+  message: string;
+  code?: ProcessingErrorCode;
+}
 
-function errorFrom(cause: unknown, fallback: string): { message: string; code?: ProcessingErrorCode } {
+function errorFrom(cause: unknown, fallback: string): ToolError {
   if (cause instanceof ProcessingError) return { message: cause.message, code: cause.code };
   return { message: fallback };
 }
 
+/**
+ * Presentational with respect to the files: they come from
+ * `ImageWorkspace`, so an image inspected here is the same one the Edit and
+ * Convert tabs already have. View reads the first image; Remove strips
+ * metadata from the whole batch, the same split the two modes always had.
+ */
 export function ImageMetadataTool({ mode }: { mode: "view" | "remove" }) {
-  const [file, setFile] = useState<File | null>(null);
+  const { files } = useImageWorkspace();
+  const file = files[0] ?? null;
+
   const [metadata, setMetadata] = useState<ImageMetadataInfo | null>(null);
-  const [state, setState] = useState<ViewState>({ status: "idle" });
-  const [batchFiles, setBatchFiles] = useState<File[]>([]);
+  const [error, setError] = useState<ToolError | null>(null);
 
-  async function handleFilesSelected(selected: File[]) {
-    if (mode === "remove") {
-      setBatchFiles(selected);
-      return;
-    }
-    const [selectedFile] = selected;
-    if (!selectedFile) return;
+  useEffect(() => {
+    if (mode !== "view" || !file) return;
+    let cancelled = false;
+    readImageMetadata(file)
+      .then((info) => {
+        if (!cancelled) setMetadata(info);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setError(errorFrom(cause, "Could not read this image's metadata."));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, file]);
 
-    setFile(selectedFile);
-    setMetadata(null);
-    setState({ status: "processing" });
-    try {
-      const info = await readImageMetadata(selectedFile);
-      setMetadata(info);
-      setState({ status: "ready" });
-    } catch (cause) {
-      setState({ status: "error", ...errorFrom(cause, "Could not read this image's metadata.") });
-    }
-  }
-
-  function handleClear() {
-    setFile(null);
-    setMetadata(null);
-    setBatchFiles([]);
-    setState({ status: "idle" });
-  }
-
-  const isBusy = state.status === "processing";
+  // Derived, not stored — a spinner can never get out of sync with the data.
+  const isReading = mode === "view" && Boolean(file) && !metadata && !error;
 
   return (
     <div className="flex flex-col gap-4">
-      <FileDropZone
-        label={
-          (mode === "view" ? file : batchFiles.length > 0)
-            ? "Drop a different image"
-            : "Drop PNG, JPEG or WebP images here"
-        }
-        hint="Nothing is uploaded — metadata is read entirely on your device."
-        accept="image/png,image/jpeg,image/webp"
-        multiple={mode === "remove"}
-        toolSlug={mode === "view" ? "image-metadata-viewer" : "remove-image-metadata"}
-        onFilesSelected={handleFilesSelected}
-      />
-
-      {mode === "view" && file && (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <FileInfo file={file} />
-          <button
-            type="button"
-            onClick={handleClear}
-            className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:border-gray-400 hover:text-gray-900 dark:border-gray-700 dark:text-gray-300 dark:hover:text-white"
-          >
-            Clear
-          </button>
-        </div>
-      )}
-
-      {isBusy && <ProcessingStatus state="processing" />}
-      {state.status === "error" && <ErrorPanel message={state.message} code={state.code} />}
+      {isReading && <ProcessingStatus state="processing" />}
+      {error && <ErrorPanel message={error.message} code={error.code} />}
 
       {mode === "view" && metadata && (
         <div className="flex flex-col gap-3">
@@ -111,10 +81,10 @@ export function ImageMetadataTool({ mode }: { mode: "view" | "remove" }) {
         </div>
       )}
 
-      {mode === "remove" && batchFiles.length > 0 && (
+      {mode === "remove" && files.length > 0 && (
         <ImageBatchList
           sourceToolSlug="remove-image-metadata"
-          files={batchFiles}
+          files={files}
           processFile={async (imageFile) => {
             const detected = await detectFileType(imageFile);
             const format = detected.format === "webp" ? "webp" : detected.format === "png" ? "png" : "jpg";

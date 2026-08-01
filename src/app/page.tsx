@@ -8,6 +8,7 @@ import { StructuredData } from "@/components/seo/StructuredData";
 import { getAppNavItems } from "@/registry/navigation";
 import { buildHomeMetadata, SITE_NAME, SITE_URL } from "@/lib/seo/metadata";
 import { buildWebsiteJsonLd } from "@/lib/seo/structuredData";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 export const metadata: Metadata = buildHomeMetadata();
 
@@ -15,7 +16,7 @@ export default function HomePage() {
   const appNavItems = getAppNavItems();
 
   return (
-    <div className="mx-auto flex w-full max-w-[54rem] flex-col gap-12 px-4 py-16">
+    <PageContainer className="gap-12 py-16">
       <StructuredData data={buildWebsiteJsonLd(SITE_NAME, SITE_URL)} />
 
       <header className="flex flex-col items-center gap-4 text-center">
@@ -50,6 +51,6 @@ export default function HomePage() {
       </nav>
 
       <AdSlot placement="category-page" />
-    </div>
+    </PageContainer>
   );
 }

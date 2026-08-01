@@ -40,11 +40,11 @@ test.describe("SEO audit regressions", () => {
     await page.goto("/pdf/merge");
     const breadcrumb = page.getByRole("navigation", { name: "Breadcrumb" });
     await expect(breadcrumb.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/");
-    await expect(breadcrumb.getByRole("link", { name: "PDF Studio" })).toHaveAttribute("href", "/pdf-tools");
+    await expect(breadcrumb.getByRole("link", { name: "PDF Studio" })).toHaveAttribute("href", "/pdf-studio");
     await expect(breadcrumb.getByText("Merge PDF")).toBeVisible();
 
     await breadcrumb.getByRole("link", { name: "PDF Studio" }).click();
-    await expect(page).toHaveURL(/\/pdf-tools$/);
+    await expect(page).toHaveURL(/\/pdf-studio$/);
     await expect(page.getByRole("heading", { level: 1, name: "PDF Studio" })).toBeVisible();
   });
 
@@ -70,9 +70,9 @@ test.describe("SEO audit regressions", () => {
   test("every category page is reachable and returns 200", async ({ page }) => {
     for (const slug of [
       "data-studio",
-      "pdf-tools",
-      "image-tools",
-      "geospatial-tools",
+      "pdf-studio",
+      "image-studio",
+      "geospatial-studio",
       "developer-tools",
       "developer-tools/text",
       "developer-tools/encoding",

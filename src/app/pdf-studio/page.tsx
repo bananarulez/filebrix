@@ -4,19 +4,19 @@ import { buildCategoryMetadata } from "@/lib/seo/metadata";
 import { StudioLayout } from "@/components/studio/StudioLayout";
 import { PdfStudioApp, type PdfStudioTab } from "@/components/pdf/PdfStudioApp";
 
-const CATEGORY = CATEGORIES.find((c) => c.slug === "pdf-tools")!;
-const STUDIO = getStudioConfig("pdf-tools");
+const CATEGORY = CATEGORIES.find((c) => c.slug === "pdf-studio")!;
+const STUDIO = getStudioConfig("pdf-studio");
 
 export const metadata = buildCategoryMetadata(
   `${CATEGORY.name} — Free, Private & No Upload`,
   CATEGORY.description,
-  "/pdf-tools"
+  "/pdf-studio"
 );
 
 /**
  * Unlike the other category pages (plain links list via CategoryPageContent),
- * this is the live, full-featured PDF Studio application — Pages, Convert,
- * Metadata and Security in one place, with no action locked. Rendered
+ * this is the live, full-featured PDF Studio application — View, Pages,
+ * Convert, Metadata and Security in one place, with no action locked. Rendered
  * through `StudioLayout`, the generic shell shared by all four Studio pages
  * — see `registry/studios.ts` for this page's configuration. The individual
  * per-tool pages (Merge PDF, Split PDF, PDF to Images, ...) still exist at

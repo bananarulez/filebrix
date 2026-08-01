@@ -3,15 +3,18 @@
 import { useState } from "react";
 import { AppShell } from "@/components/app-shell/AppShell";
 import { Toolbar, type ToolbarModeOption } from "@/components/app-shell/Toolbar";
+import { studioTabId } from "@/components/app-shell/tabIds";
 import { ActionPicker } from "@/components/app-shell/ActionPicker";
-import { PdfPageWorkspaceTool, type WorkspaceMode } from "./PdfPageWorkspaceTool";
+import { PdfPageWorkspaceTool, TOOL_SLUG_BY_MODE, type WorkspaceMode } from "./PdfPageWorkspaceTool";
 import { PdfSplitTool } from "./PdfSplitTool";
 import { PdfMetadataTool } from "./PdfMetadataTool";
 import { ImagesToPdfTool } from "./ImagesToPdfTool";
 import { PdfToImagesTool } from "./PdfToImagesTool";
 import { PdfToTextTool } from "./PdfToTextTool";
+import { PdfViewerTool } from "./PdfViewerTool";
+import { PdfFilePanel, PdfWorkspace, usePdfWorkspace } from "./PdfWorkspace";
 
-export type PdfStudioTab = "pages" | "convert" | "metadata" | "security";
+export type PdfStudioTab = "view" | "pages" | "convert" | "metadata";
 export type PagesAction = WorkspaceMode | "split";
 export type ConvertTool = "images-to-pdf" | "pdf-to-images" | "pdf-to-txt";
 export type MetadataMode = "view" | "remove";
@@ -29,10 +32,10 @@ interface PdfStudioAppProps {
 }
 
 const TAB_OPTIONS: ToolbarModeOption<PdfStudioTab>[] = [
+  { id: "view", label: "View" },
   { id: "pages", label: "Pages" },
   { id: "convert", label: "Convert" },
   { id: "metadata", label: "Metadata" },
-  { id: "security", label: "Security" },
 ];
 
 const PAGES_ACTIONS: PagesAction[] = ["merge", "split", "extract", "delete", "reorder", "rotate"];
@@ -58,6 +61,30 @@ const METADATA_MODE_LABEL: Record<MetadataMode, string> = {
   remove: "Remove",
 };
 
+/**
+ * Images to PDF is the one action here whose input isn't a PDF — it takes
+ * N images and owns its own drop zone, so the shared PDF drop zone is
+ * hidden for it. Same rule Data Studio applies to its paste-first actions
+ * and Geospatial Studio to its coordinate converter.
+ */
+function actionNeedsPdf(tab: PdfStudioTab, convertTool: ConvertTool): boolean {
+  if (tab === "convert") return convertTool !== "images-to-pdf";
+  return true;
+}
+
+/** The registry slug of whatever tool is active, for the Universal File Drop handoff (CLAUDE.md rule 9). */
+function activeToolSlug(
+  tab: PdfStudioTab,
+  pagesAction: PagesAction,
+  convertTool: ConvertTool,
+  metadataMode: MetadataMode
+): string | undefined {
+  if (tab === "pages") return pagesAction === "split" ? "split" : TOOL_SLUG_BY_MODE[pagesAction];
+  if (tab === "convert") return convertTool;
+  if (tab === "metadata") return metadataMode === "view" ? "metadata-viewer" : "remove-metadata";
+  // View has no standalone tool page of its own.
+  return undefined;
+}
 
 /**
  * One shared shell hosting all 11 existing PDF tools, every one of them reused
@@ -71,21 +98,27 @@ const METADATA_MODE_LABEL: Record<MetadataMode, string> = {
  * as-is here).
  *
  * Every `lockedX` prop hides only the sub-picker for that one tab — the top-level
- * Pages/Convert/Metadata/Security tab bar always stays switchable, matching how a
- * locked Data Studio tool (e.g. csv-viewer) can still switch modes.
+ * View/Pages/Convert/Metadata tab bar always stays switchable, matching how
+ * a locked Data Studio tool (e.g. csv-viewer) can still switch modes.
  *
- * No `toolSlug` prop: unlike `SpreadsheetDataApp` (one shared `FileDropZone` across
- * all modes), every sub-component here already owns its own `FileDropZone` with its
- * own hardcoded `toolSlug` matching its individual registry slug — the Universal
- * File Drop handoff for each of the 11 URLs keeps working exactly as before with no
- * new plumbing needed.
+ * The loaded PDF lives in `PdfWorkspace`, not in each tool, so switching tabs — or
+ * Pages actions, e.g. Merge to Split — keeps it. See that file for why.
  */
-export function PdfStudioApp({
+export function PdfStudioApp(props: PdfStudioAppProps) {
+  return (
+    <PdfWorkspace>
+      <PdfStudioBody {...props} />
+    </PdfWorkspace>
+  );
+}
+
+function PdfStudioBody({
   initialTab = "pages",
   lockedPagesAction,
   lockedMetadataMode,
   lockedConvertTool,
 }: PdfStudioAppProps) {
+  const { documentKey } = usePdfWorkspace();
   const [tab, setTab] = useState<PdfStudioTab>(initialTab);
   const [pagesAction, setPagesAction] = useState<PagesAction>(lockedPagesAction ?? "merge");
   const [convertTool, setConvertTool] = useState<ConvertTool>(lockedConvertTool ?? "images-to-pdf");
@@ -96,67 +129,65 @@ export function PdfStudioApp({
   const activeMetadataMode = lockedMetadataMode ?? metadataMode;
 
   return (
-    <AppShell toolbar={<Toolbar modes={TAB_OPTIONS} activeMode={tab} onModeChange={setTab} />}>
+    <AppShell activeTabId={studioTabId(tab)} toolbar={<Toolbar modes={TAB_OPTIONS} activeMode={tab} onModeChange={setTab} />}>
+      {/* Order matches the other three Studios: tab bar (in the shell's own
+       * toolbar slot) -> action picker -> drop zone -> the tool's own UI. */}
       <div className="flex flex-col gap-4">
-        {tab === "pages" && (
-          <>
-            {!lockedPagesAction && (
-              <ActionPicker
-                options={PAGES_ACTIONS}
-                labels={PAGES_ACTION_LABEL}
-                active={activePagesAction}
-                onChange={setPagesAction}
-              />
-            )}
-            {activePagesAction === "split" ? (
-              <PdfSplitTool key="split" />
-            ) : (
-              <PdfPageWorkspaceTool key={activePagesAction} mode={activePagesAction} />
-            )}
-          </>
+        {tab === "pages" && !lockedPagesAction && (
+          <ActionPicker
+            options={PAGES_ACTIONS}
+            labels={PAGES_ACTION_LABEL}
+            active={activePagesAction}
+            onChange={setPagesAction}
+          />
         )}
+        {tab === "convert" && !lockedConvertTool && (
+          <ActionPicker
+            options={CONVERT_TOOLS}
+            labels={CONVERT_TOOL_LABEL}
+            active={activeConvertTool}
+            onChange={setConvertTool}
+          />
+        )}
+        {tab === "metadata" && !lockedMetadataMode && (
+          <ActionPicker
+            options={METADATA_MODES}
+            labels={METADATA_MODE_LABEL}
+            active={activeMetadataMode}
+            onChange={setMetadataMode}
+          />
+        )}
+
+        {actionNeedsPdf(tab, activeConvertTool) && (
+          <PdfFilePanel
+            // Merge is the one action that takes several PDFs and appends
+            // them rather than replacing what's loaded.
+            multiple={tab === "pages" && activePagesAction === "merge"}
+            toolSlug={activeToolSlug(tab, activePagesAction, activeConvertTool, activeMetadataMode)}
+          />
+        )}
+
+        {tab === "view" && <PdfViewerTool key={`view-${documentKey}`} />}
+
+        {tab === "pages" &&
+          (activePagesAction === "split" ? (
+            <PdfSplitTool key={`split-${documentKey}`} />
+          ) : (
+            <PdfPageWorkspaceTool key={activePagesAction} mode={activePagesAction} />
+          ))}
 
         {tab === "convert" && (
           <>
-            {!lockedConvertTool && (
-              <ActionPicker
-                options={CONVERT_TOOLS}
-                labels={CONVERT_TOOL_LABEL}
-                active={activeConvertTool}
-                onChange={setConvertTool}
-              />
-            )}
             {activeConvertTool === "images-to-pdf" && <ImagesToPdfTool key="images-to-pdf" />}
-            {activeConvertTool === "pdf-to-images" && <PdfToImagesTool key="pdf-to-images" />}
-            {activeConvertTool === "pdf-to-txt" && <PdfToTextTool key="pdf-to-txt" />}
+            {activeConvertTool === "pdf-to-images" && <PdfToImagesTool key={`pdf-to-images-${documentKey}`} />}
+            {activeConvertTool === "pdf-to-txt" && <PdfToTextTool key={`pdf-to-txt-${documentKey}`} />}
           </>
         )}
 
         {tab === "metadata" && (
-          <>
-            {!lockedMetadataMode && (
-              <ActionPicker
-                options={METADATA_MODES}
-                labels={METADATA_MODE_LABEL}
-                active={activeMetadataMode}
-                onChange={setMetadataMode}
-              />
-            )}
-            <PdfMetadataTool key={activeMetadataMode} mode={activeMetadataMode} />
-          </>
+          <PdfMetadataTool key={`${activeMetadataMode}-${documentKey}`} mode={activeMetadataMode} />
         )}
 
-        {tab === "security" && (
-          <div className="flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-6 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
-            <p className="font-medium text-gray-900 dark:text-white">Password protection isn&rsquo;t available yet</p>
-            <p>
-              Adding a password to a PDF is planned for PDF Studio, but the library this app uses for PDF
-              editing doesn&rsquo;t currently support writing password-protected PDFs — only detecting and
-              rejecting already-encrypted ones (see the Pages and Metadata tabs). This tab is reserved for
-              that feature once it can be built without a new dependency or engine.
-            </p>
-          </div>
-        )}
       </div>
     </AppShell>
   );

@@ -4,13 +4,13 @@ import { buildCategoryMetadata } from "@/lib/seo/metadata";
 import { StudioLayout } from "@/components/studio/StudioLayout";
 import { GeospatialStudioApp, type GeospatialStudioTab } from "@/components/geo/GeospatialStudioApp";
 
-const CATEGORY = CATEGORIES.find((c) => c.slug === "geospatial-tools")!;
-const STUDIO = getStudioConfig("geospatial-tools");
+const CATEGORY = CATEGORIES.find((c) => c.slug === "geospatial-studio")!;
+const STUDIO = getStudioConfig("geospatial-studio");
 
 export const metadata = buildCategoryMetadata(
   `${CATEGORY.name} — Free, Private & No Upload`,
   CATEGORY.description,
-  "/geospatial-tools"
+  "/geospatial-studio"
 );
 
 /**
@@ -23,7 +23,7 @@ export const metadata = buildCategoryMetadata(
  * GeoJSON, ...) still exist at their own canonical URLs and are still in
  * the sitemap for SEO/direct-search-traffic purposes; `StudioLayout`'s
  * "related actions" section links back to them (same reasoning as
- * `/data-studio`, `/pdf-tools` and `/image-tools`).
+ * `/data-studio`, `/pdf-studio` and `/image-studio`).
  */
 export default function Page() {
   return (

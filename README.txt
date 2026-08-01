@@ -956,6 +956,13 @@ Each should:
 
 Do not create long SEO filler articles.
 
+Note (as built): the URLs above are the original spec. Four of these
+categories became unified Studio applications and their live URLs are
+/data-studio, /pdf-studio, /image-studio and /geospatial-studio;
+/developer-tools stayed a categorized collection of independent tools.
+Every original URL listed above permanently redirects to its current
+one — see next.config.ts#redirects() and CLAUDE.md rule 10.
+
 ---
 
 # 28. Large File Strategy

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { tools, getToolBySlug, getToolUrl } from "@/registry";
-import { STUDIOS } from "@/registry/studios";
+import { STUDIOS, getStudioConfig } from "@/registry/studios";
 import { getAllCapabilities, getToolsByCapability, getToolCapability } from "@/registry/capabilities";
 
 const APP_DIR = path.resolve(__dirname, "..", "..", "src", "app");
@@ -136,5 +136,37 @@ describe("capability index integrity", () => {
       .filter((tool) => tool.engine === "developer" && !tool.devCategory)
       .map((tool) => tool.id);
     expect(uncategorized).toEqual([]);
+  });
+  it("no Studio's rendered copy leaks an unresolved {placeholder}", () => {
+    // getStudioConfig is the one door every consumer goes through, so a
+    // placeholder surviving it would reach both the page and the FAQPage
+    // JSON-LD. Catches a typo'd token as well as a forgotten substitution.
+    const leaks: string[] = [];
+    for (const studio of STUDIOS) {
+      const config = getStudioConfig(studio.categorySlug);
+      const copy = [config.description, ...config.faq.flatMap((item) => [item.question, item.answer])];
+      for (const text of copy) {
+        if (/\{[a-zA-Z]/.test(text)) leaks.push(`${studio.categorySlug}: ${text}`);
+      }
+    }
+    expect(leaks).toEqual([]);
+  });
+
+  it("a Studio's stated tool count matches the registry", () => {
+    // The reason `{toolCount}` exists: these numbers were hand-written and
+    // Geospatial Studio shipped "11" for a while after it had grown to 15.
+    for (const studio of STUDIOS) {
+      const config = getStudioConfig(studio.categorySlug);
+      const expected = studio.relatedEngines.reduce(
+        (total, engine) => total + tools.filter((tool) => tool.engine === engine).length,
+        0
+      );
+      expect(config.toolCount, studio.categorySlug).toBe(expected);
+
+      for (const item of config.faq) {
+        const stated = /every one of the (\d+) individual/.exec(item.answer);
+        if (stated) expect(Number(stated[1]), `${studio.categorySlug} FAQ`).toBe(expected);
+      }
+    }
   });
 });

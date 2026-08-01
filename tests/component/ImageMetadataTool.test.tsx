@@ -1,6 +1,7 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { screen, waitFor, fireEvent } from "@testing-library/react";
 import { ImageMetadataTool } from "@/components/image/ImageMetadataTool";
+import { renderWithImageWorkspace } from "./imageWorkspaceHarness";
 import { readImageMetadata } from "@/engines/image/render/metadata";
 import { processImageFile } from "@/engines/image";
 import { detectFileType } from "@/lib/detect/detectFile";
@@ -27,13 +28,26 @@ beforeAll(() => {
   URL.revokeObjectURL = vi.fn();
 });
 
+// The shared ImageWorkspace detects every dropped file's format before any
+// tool sees it, so this mock now has to answer for the load itself — not only
+// for the remove-mode batch that reads it directly.
+beforeEach(() => {
+  mockedDetect.mockResolvedValue({ format: "jpg", confidence: "signature" });
+});
+
 function makeFile(name: string): File {
   return new File(["stub"], name, { type: "image/jpeg" });
 }
 
-function selectFiles(files: File[]) {
+/**
+ * The shared ImageWorkspace detects each file's format (an async step) before
+ * any tool renders its controls, so selection has to be awaited — a tool used
+ * to receive its files synchronously from its own drop zone.
+ */
+async function selectFiles(files: File[]) {
   const input = document.querySelector('input[type="file"]') as HTMLInputElement;
   fireEvent.change(input, { target: { files } });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Clear" })).toBeInTheDocument());
 }
 
 describe("ImageMetadataTool — view mode", () => {
@@ -46,8 +60,8 @@ describe("ImageMetadataTool — view mode", () => {
       hasGpsData: true,
     });
 
-    render(<ImageMetadataTool mode="view" />);
-    selectFiles([makeFile("photo.jpg")]);
+    renderWithImageWorkspace(<ImageMetadataTool mode="view" />);
+    await selectFiles([makeFile("photo.jpg")]);
 
     await waitFor(() => expect(screen.getByText("TestCam")).toBeInTheDocument());
     expect(screen.getByText(/contains gps location data/i)).toBeInTheDocument();
@@ -56,8 +70,8 @@ describe("ImageMetadataTool — view mode", () => {
   it("shows a clear message when no metadata is found", async () => {
     mockedRead.mockResolvedValue({ fields: [], hasGpsData: false });
 
-    render(<ImageMetadataTool mode="view" />);
-    selectFiles([makeFile("screenshot.png")]);
+    renderWithImageWorkspace(<ImageMetadataTool mode="view" />);
+    await selectFiles([makeFile("screenshot.png")]);
 
     await waitFor(() => expect(screen.getByText(/no exif\/tiff metadata was found/i)).toBeInTheDocument());
   });
@@ -68,8 +82,8 @@ describe("ImageMetadataTool — remove mode", () => {
     mockedDetect.mockResolvedValue({ format: "jpg", confidence: "signature" });
     mockedProcess.mockResolvedValue(new Blob(["img"], { type: "image/jpeg" }));
 
-    render(<ImageMetadataTool mode="remove" />);
-    selectFiles([makeFile("a.jpg"), makeFile("b.jpg")]);
+    renderWithImageWorkspace(<ImageMetadataTool mode="remove" />);
+    await selectFiles([makeFile("a.jpg"), makeFile("b.jpg")]);
 
     await waitFor(() => expect(screen.getByText(/download all 2 as \.zip/i)).toBeInTheDocument());
     expect(mockedRead).not.toHaveBeenCalled();

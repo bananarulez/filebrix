@@ -28,7 +28,6 @@ export const ACTION_FORMATS: Record<string, ActionFormats> = {
   dissolve: ALL_GEOMETRY,
   merge: ALL_GEOMETRY,
   "split-multi": ALL_GEOMETRY,
-  "coordinate-editing": ALL_GEOMETRY,
 
   // --- Analyze ------------------------------------------------------------
   summary: ALL_GEOMETRY,

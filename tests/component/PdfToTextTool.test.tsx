@@ -1,13 +1,24 @@
-import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { screen, waitFor, fireEvent } from "@testing-library/react";
 import { PdfToTextTool } from "@/components/pdf/PdfToTextTool";
 import { openPdfRenderSession } from "@/engines/pdf/render/session";
+import { inspectPdfFile } from "@/engines/pdf";
+import { makePdfInfo, renderWithPdfWorkspace } from "./pdfWorkspaceHarness";
 
 vi.mock("@/engines/pdf/render/session", () => ({
   openPdfRenderSession: vi.fn(),
 }));
 
+// The shared PdfWorkspace inspects a dropped PDF's structure before any tool sees it.
+vi.mock("@/engines/pdf", () => ({
+  inspectPdfFile: vi.fn(),
+}));
+
 const mockedOpenSession = vi.mocked(openPdfRenderSession);
+
+beforeEach(() => {
+  vi.mocked(inspectPdfFile).mockResolvedValue(makePdfInfo(1));
+});
 
 function makeFile(name: string): File {
   return new File(["stub"], name, { type: "application/pdf" });
@@ -34,7 +45,7 @@ describe("PdfToTextTool", () => {
       makeSession({ pages: ["Hello world"], hasExtractableText: true })
     );
 
-    render(<PdfToTextTool />);
+    renderWithPdfWorkspace(<PdfToTextTool />);
     selectFile(makeFile("doc.pdf"));
 
     await waitFor(() => expect(screen.getByLabelText("Extracted text")).toHaveValue("Hello world"));
@@ -43,7 +54,7 @@ describe("PdfToTextTool", () => {
   it('shows the exact "no extractable text" message for a scanned PDF, never claiming OCR', async () => {
     mockedOpenSession.mockResolvedValue(makeSession({ pages: [""], hasExtractableText: false }));
 
-    render(<PdfToTextTool />);
+    renderWithPdfWorkspace(<PdfToTextTool />);
     selectFile(makeFile("scanned.pdf"));
 
     await waitFor(() =>

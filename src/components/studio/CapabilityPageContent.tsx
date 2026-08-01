@@ -11,6 +11,7 @@ import { Breadcrumbs } from "@/components/seo/Breadcrumbs";
 import { RelatedApplications } from "@/components/seo/RelatedApplications";
 import { LocalProcessingBadge } from "@/components/tools/LocalProcessingBadge";
 import { AdSlot } from "@/components/tools/AdSlot";
+import { PageContainer, ProseContainer } from "@/components/layout/PageContainer";
 
 /** `<title>`/`<meta description>`/canonical for one capability index page, all from registry data. */
 export function capabilityMetadata(categorySlug: StudioCategorySlug, capability: AppMode): Metadata {
@@ -24,7 +25,7 @@ export function capabilityMetadata(categorySlug: StudioCategorySlug, capability:
 
 /**
  * One Application capability's index page (`/{categorySlug}/{capability}`,
- * e.g. `/pdf-tools/pages`) — the middle layer of the site's URL hierarchy
+ * e.g. `/pdf-studio/pages`) — the middle layer of the site's URL hierarchy
  * that previously didn't exist at all: Home → Application → **Capability**
  * → Tool. Before this, a Studio's capabilities were client-side tabs with
  * no URL, so the only crawlable path to a tool was the Application page's
@@ -47,7 +48,7 @@ export function CapabilityPageContent({
   const siblings = getCapabilitiesForStudio(categorySlug).filter((c) => c.id !== capability);
 
   return (
-    <div className="mx-auto flex w-full max-w-[54rem] flex-col gap-8 px-4 py-16">
+    <PageContainer className="gap-8 py-16">
       <StructuredData
         data={buildItemListJsonLd(
           `${config.label} — ${config.appName}`,
@@ -70,7 +71,9 @@ export function CapabilityPageContent({
           <h1 className="text-3xl font-semibold">
             {config.label} — {config.appName}
           </h1>
-          <p className="text-gray-600 dark:text-gray-300">{config.description}</p>
+          <ProseContainer>
+            <p className="text-gray-600 dark:text-gray-300">{config.description}</p>
+          </ProseContainer>
         </header>
       </div>
 
@@ -118,6 +121,6 @@ export function CapabilityPageContent({
       )}
 
       <RelatedApplications excludeSlug={categorySlug} />
-    </div>
+    </PageContainer>
   );
 }

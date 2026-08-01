@@ -3096,3 +3096,340 @@ getting no crumb.
 **Verification:** `tsc --noEmit` clean, lint clean, Vitest 743/743, clean
 production build, bundle budget green, full Playwright suite at
 `workers: 1`.
+
+---
+
+## 37. Every Studio keeps your file, PDF Studio gets a Viewer, and three URLs finally match their names
+
+Three related changes, from one report: dropping a PDF into PDF Studio's
+Merge action and switching to Split silently lost the file, and it had to be
+dropped again.
+
+### Task A — the file lives in the Studio, not in the tool
+
+That bug wasn't specific to Merge/Split. Every PDF and Image tool owned its
+own `file` state and its own `FileDropZone`, so *any* tab or action switch
+unmounted the tool and threw the loaded file away. Geospatial Studio had the
+identical bug and fixed it in entry 29 with `GeoWorkspace`; Data Studio never
+had it, because `SpreadsheetDataApp` is one component that owns the file
+centrally.
+
+So the fix was to copy the shape that already worked rather than invent two
+more: **`components/pdf/PdfWorkspace.tsx`** and
+**`components/image/ImageWorkspace.tsx`**, each a context provider plus a
+drop-zone panel (`PdfFilePanel`/`ImageFilePanel`) the Studio renders inside
+its own shell, below the tab bar and action picker — the same order the other
+three use. All eleven PDF tools and all six image tool components became
+presentational: they read the workspace and render only their own options and
+results. `documentKey` is folded into each tool's React `key` exactly as in
+`GeoWorkspace`, so a new file remounts the tool instead of needing a reset
+effect that `react-hooks/set-state-in-effect` would reject anyway.
+
+Three things were more than mechanical:
+
+- **PDF's workspace owns the pdf.js render session too**, not just the
+  `File`. Each tool used to open its own, and PDF→Images and PDF→Text opened
+  *and closed* one per run — so the same document was parsed two or three
+  times in one session. Now it's opened once per load, and a tool must never
+  `close()` what it didn't open (the workspace does, on replace/clear/
+  unmount). This is what made Task B nearly free.
+- **The stale-request guard moved with the load.** `PdfPageWorkspaceTool` and
+  `PdfSplitTool` each kept a private `requestRef` (entry 32) that only worked
+  because they owned the drop handler. The workspace now exposes
+  `currentLoadToken()` — a *function*, so a read after an `await` sees the
+  live value rather than the one captured at render — and both tools guard
+  their long builds through it. Merge is the one action that appends rather
+  than replaces, and it tells the two apart by array-prefix identity, so
+  adding a second PDF keeps the page order the user already arranged.
+- **Image needed action gating, because `accept` stopped meaning anything.**
+  Each image tool used to declare what it could read via its own drop zone's
+  `accept` attribute; with one shared drop zone that's nowhere. So the
+  workspace detects each file's format on load and
+  `components/image/actionFormats.ts` (modelled directly on the geo one)
+  disables what can't run, with a readable reason: "WebP to JPG" is
+  unavailable for a PNG, no pixel-level Edit action can touch an SVG. A
+  first cut also narrowed the shared drop zone's `accept` per action and
+  made things *worse* — with a PNG loaded, "SVG to PNG" was disabled and the
+  file picker wouldn't offer an SVG either, so Clear was the only escape.
+  Narrowing now happens only on a locked tool page, where one action is the
+  whole point of the URL.
+
+**A dead handoff surfaced on the way.** Consolidating drop zones is what kills
+the per-tool `toolSlug` (CLAUDE.md rule 9) — and Geospatial Studio had already
+shipped with `<GeoFilePanel />` rendered with no slug at all, so the homepage's
+Universal File Drop couldn't hand a file to any geo tool. All three Studios now
+pass the active action's own registry slug; geo got a `TOOL_SLUG_BY_ACTION` map
+for the actions that have a standalone page.
+
+`ImageViewerTool` lost code rather than gaining it: its render-time "auto-load
+the just-edited file into my own list" adjustment existed only because Edit and
+View held two unrelated `File` lists, and a re-dropped file would never be
+`===` the edited source. Both tabs now read the same objects, so the viewer
+just opens on the edited one.
+
+### Task B — PDF Studio's View tab
+
+A Studio-only capability with no standalone tool behind it, exactly like Image
+Studio's own View. `PdfViewerTool` renders one page at a time at ~760px through
+the workspace's already-open session (`renderThumbnail` is just "render this
+page at most this wide" — Pages asks it for 140px), with page navigation and
+zoom, re-rendering on change. One page at a time, deliberately: a continuous
+all-pages canvas would need its own virtualization to stay cheap on a 500-page
+document, and the Pages tab's thumbnail grid already covers whole-document
+overview. `registry/studios.ts` gained the matching `view` action with no
+`indexDescription`, so no thin capability index page is generated for it.
+
+### Task C — /pdf-tools → /pdf-studio, and two more
+
+Three of the four Studios still had "-tools" URLs from before they were
+Studios, while `/data-studio` matched its name. `CATEGORIES` slugs are now
+`pdf-studio`, `image-studio` and `geospatial-studio`, with the app directories
+renamed to match and permanent redirects for both the Application page and
+every capability page under it (`/pdf-tools/pages` → `/pdf-studio/pages`).
+Developer Toolkit keeps `/developer-tools` — it deliberately isn't a Studio.
+Everything else followed from the registry being the single source of truth:
+sitemap, breadcrumbs, capability pages, nav and search needed no logic
+changes, only the new slugs. No individual tool URL moved; none of them ever
+lived under a category slug.
+
+CLAUDE.md rule 10's "slugs are frozen" line is now a "slugs are not free-form
+labels" rule instead — move one only when the URL is genuinely wrong, and
+always with redirects covering sub-paths.
+
+### Tests
+
+The eight PDF/image component test files kept driving the real drop → load →
+tool path rather than switching to injected state: two new harnesses
+(`pdfWorkspaceHarness.tsx`, `imageWorkspaceHarness.tsx`) render the provider
+plus the real panel, so the only things still mocked are the engine calls.
+Loading is asynchronous everywhere now (format detection for images), which is
+why the image tests had to start awaiting their file selection.
+
+New e2e coverage: a PDF dropped on Merge is still loaded on Split *and* on
+Metadata (asserted by a metadata field rendering, not just the filename, so
+it proves the same `File` came through), Clear being the only thing that
+unloads it; the View tab rendering a real pdf.js data URL and paging to page
+2; the same persistence property for Image Studio ending on the Metadata tab
+reading real EXIF; a format-gated action showing `aria-disabled` plus its
+reason; and the old URLs redirecting, including capability sub-paths.
+
+The existing Image Studio hub test needed a genuine behavioural update, not a
+selector fix: it used to click "SVG to PNG" while a JPEG was loaded, which is
+now (correctly) disabled. It drops the SVG instead and asserts the picker
+moves itself to the only conversion that file supports.
+
+**Verification:** `tsc --noEmit` clean, lint clean, Vitest 743/743, clean
+production build, bundle budget green (shared 181.5 KB of 210 KB), full
+Playwright suite 273/273 at `workers: 1`.
+
+---
+
+## 38. The page column goes fluid, and the ad rails stop guessing where it is
+
+**Logged retroactively.** This change was already sitting in the working tree
+— uncommitted and with no log entry — when entry 37's work began, which is how
+it was found: CLAUDE.md still described a fixed 864px column and rails
+positioned at `calc(50% ± 28.5rem)`, neither of which had been true for a
+while. Recording it now so the documentation and the code agree.
+
+### What changed
+
+`components/layout/PageContainer.tsx` is new and is now the only place a page
+width is decided. Six call sites — the homepage, `StudioLayout`,
+`ToolPageLayout`, `CapabilityPageContent`, `DevCategoryPageContent` and
+`/developer-tools` — each dropped their own `mx-auto max-w-[54rem] px-4` for
+`<PageContainer className="…">`.
+
+The column is now fluid and capped at **1520px**, with the side-rail gutter
+reserved as container padding (`xl:px-[12.5rem]`) instead of the rails being
+positioned relative to the column. `SideRailAds` correspondingly stopped
+computing `calc(50% ± 28.5rem)` and simply pins each rail `1rem` from its
+viewport edge, inside the space the container already reserved.
+
+**That inversion is the actual point of the change.** The old arrangement had
+two files agreeing by hand on one measurement — the column's half-width — with
+nothing enforcing it. That coupling is why the *first* attempt at a wide layout
+(the since-deleted `WideBreakout.tsx` full-bleed technique in the Data Studio
+app) was reverted rather than fixed: a column that changes width breaks a rail
+whose position was derived from the old width. Now the container reserves the
+space and the rails occupy it, so a column width change can't strand a rail.
+
+Effective widths: 1920px viewport → 1520px column (was 864px), 1600px → 1200px,
+1366px → 966px, below `xl` → full width minus normal padding, since no rails
+exist there to make room for.
+
+### What it did not fix, stated honestly
+
+- **Between 1280px and ~1450px the two rails cost 400px**, so the gain over the
+  old fixed column is smallest at exactly the laptop widths most visitors have.
+  Inherent to keeping both; a full-bleed column means dropping the rails, which
+  is a monetization decision (README.txt §37), not a layout one.
+- **Prose is now too wide.** `ProseContainer` (54rem) was written in the same
+  file for FAQ answers, how-it-works steps and `not-found.tsx` — and never
+  wired up to any of them. Confirmed in a real 1920px browser while writing
+  this entry: a CSV Viewer FAQ answer runs the full ~1500px on one line.
+  `not-found.tsx` also still hardcodes its own `max-w-[54rem]`, the exact
+  duplication `PageContainer` exists to remove.
+- **Three exported constants were dead.** `CONTENT_MAX_PX`, `RAIL_GUTTER_REM`
+  and `PROSE_MAX_REM` were exported as if they were the shared source of truth,
+  and nothing ever imported them — Tailwind needs literal class strings, so
+  they *couldn't* be. Both files' comments claimed a coupling that didn't
+  exist, which is worse than an honest duplicated literal. Removed in entry
+  37's documentation pass; both files now state the real invariant instead
+  (gutter ≥ rail width + edge offset + a visible gap).
+
+### Not regressed
+
+The property the original fixed width existed to protect still holds and is
+still asserted: the column is the same width before and after a file loads.
+`spreadsheet-app.spec.ts` and `parquet-viewer.spec.ts` both check it (empty vs.
+loaded, and against another Studio page) and both pass unchanged — the test
+compares widths to each other rather than to a hardcoded number, which is why
+it survived a layout change of this size.
+
+---
+
+## 39. Acting on an architecture review: reading width, real tab semantics, and no more permanent "coming soon"
+
+An external review of entries 37–38 raised eight points. Six were implemented,
+one was implemented differently than suggested, and one was answered rather
+than built. Each is recorded with its reasoning, because "we considered it and
+said no" is the part that gets lost.
+
+### Reading width (implemented, in the shared components)
+
+Entry 38 left `ProseContainer` written but wired to nothing, and a CSV Viewer
+FAQ answer ran the full ~1500px on one line. It's now applied inside `FAQ.tsx`
+and `ToolInstructions.tsx` themselves rather than at each of ~80 call sites, so
+every page that renders either gets a readable measure and a new page can't
+forget. Page headers wrap their description paragraph the same way, and
+`not-found.tsx` — a pure reading page — now uses `ProseContainer` directly
+instead of hardcoding the 54rem the container already owns.
+
+Nothing interactive was narrowed: tables, maps, grids, drop zones and preview
+panes still get the full application column. `layout.spec.ts` pins both halves
+at once (column > 1200px at 1920px wide, FAQ answer ≤ 864px), so "wide app,
+narrow prose" can't quietly become "narrow everything".
+
+### The ad rails were labelled backwards
+
+`placement="left-rail"` was rendered with `right: …` and vice versa. Invisible
+while `AdSlot` only reserves space, but a placement name is what an ad network
+reports and targets on, so every impression would have been mislabelled the
+moment one was wired in. Fixed, and each rail now carries `data-rail` so the
+new test asserts real geometry instead of trusting the name.
+
+### `tests/e2e/layout.spec.ts` (new)
+
+At 1280/1440/1920, across one page per layout shell: neither rail overlaps the
+content column, each is on the side it claims, neither hangs off the viewport,
+and below `xl` no rail renders and no gutter is reserved. Two files have to
+agree on one measurement (`PageContainer`'s gutter, `SideRailAds`' offset) and
+nothing in the type system connects them — this does.
+
+Writing it surfaced a measurement bug in the test itself: deriving the column
+by walking up from the `<h1>` landed on the full-width padded wrapper on the
+homepage and on the real column elsewhere, so the assertion was meaningless on
+one page and strict on another. `PageContainer` now marks its own column with
+`data-content-column`.
+
+### Hardcoded counts → `{toolCount}`
+
+Three FAQ answers stated tool counts by hand and one had already drifted (11 vs.
+the real 15). A Studio's copy may now write `{toolCount}`, substituted by
+`getStudioConfig()` from `relatedEngines` — the same lookup that makes Parquet
+Viewer count toward Data Studio. Two integrity tests keep it honest: nothing may
+leak an unresolved `{token}` to the DOM or the FAQPage JSON-LD, and any stated
+count must equal the registry's.
+
+### ARIA: implemented for `Toolbar`, *rejected* for `ActionPicker`
+
+The review asked for the complete Tabs pattern on everything using `role="tab"`.
+Half of that was right.
+
+`Toolbar` is a real tab bar and now implements the real pattern: `aria-controls`
+onto `AppShell`'s `role="tabpanel"` (with matching `aria-labelledby`), roving
+`tabindex`, and Arrow/Home/End navigation. Ids live in `tabIds.ts` as fixed
+strings — the two components are siblings that never see each other's props,
+and exactly one `AppShell` renders per page.
+
+`ActionPicker` became a **`role="radiogroup"`** instead, because it is not a tab
+set: the Studio's one shared drop zone sits *between* the picker and the tool it
+selects and belongs to every action equally, so there is no discrete panel for a
+`tab` to own. Making it a nested tablist would have meant inventing a panel
+boundary that doesn't exist in the layout. The review explicitly allowed this
+("if the controls are not actually tabs, replace them with more appropriate
+semantics"), and the shared drop zone is the concrete evidence.
+
+Cost: ~40 test queries moved from `getByRole("tab")` to `getByRole("radio")`.
+Worth noting as a benefit — "View" was previously ambiguous between PDF Studio's
+View *tab* and its Metadata View *action*, and now isn't.
+
+### Placeholders: one built, two deleted
+
+Each was resolved by asking whether it was *blocked* or merely *unbuilt*.
+
+- **Image Watermark — unbuilt, so built.** Nothing had ever blocked it: the
+  pipeline already composited and the worker could already draw text
+  (`fillText`/`measureText` in a real Worker's `OffscreenCanvas`, confirmed
+  empirically first, same discipline as the `filter` pass). It's one more
+  additive field on `ImageProcessOptions`, drawn after colour-adjust so it isn't
+  cropped/rotated/filtered with the image. Size is a fraction of the shorter
+  side, not a pixel value, so one setting works across a mixed batch.
+- **PDF Security — blocked, so removed.** pdf-lib can detect encryption but
+  cannot write it. The tab, its `security` capability entry, and its e2e test
+  are gone; the FAQ now answers the question honestly instead of promising
+  later.
+- **Geospatial Coordinate Editing — blocked, so removed.** Needs a map-editing
+  dependency this project doesn't have.
+
+`registryIntegrity` and `seo-architecture.spec.ts` both needed updating:
+`/pdf-studio/security` must now 404 as a *removed* capability rather than as a
+page-less one. `search.test.ts`'s "match an Application by a capability label"
+case used "Security" precisely because it was unique; it uses "Pages" now.
+
+### Product opportunities: one implemented, one costed
+
+**PDF text search — implemented.** `session.extractText()` already returned
+per-page strings, so search needed no new engine capability: type a query, get
+"N matches on M pages", step between them. Extraction is lazy (first keystroke),
+so opening the viewer to read never pays for a text pass it may not use.
+Matches are located per *page* and not highlighted in place — highlighting needs
+pdf.js's text layer positioned over the rendered image, a much larger feature
+than the part that's actually hard by hand, and the UI says so rather than
+implying otherwise.
+
+**Compress PDF — not implemented, and here's the honest costing.** It is
+*possible* with what's here: `openPdfRenderSession().renderPageImage()` can
+rasterize each page at a reduced scale/quality and `buildPdfFromImageFiles()`
+already builds a PDF from images, so the pipeline exists end to end. The reason
+it wasn't built in this pass is that it **destroys the document**: every page
+becomes a JPEG, so text stops being selectable, searchable and accessible, links
+and form fields disappear, and file size can *increase* for text-heavy PDFs.
+Plenty of tools ship exactly this without saying so; doing it here would
+contradict "don't promise conversions that can't be reliably performed locally"
+(README.txt §35). A defensible version would need to detect whether a document
+is image-heavy, refuse or warn loudly for text PDFs, and be named for what it
+does. That's a product decision, not a spare afternoon, so it stays in
+README.txt's "Potential later tools" list where it already is.
+
+### A dev-only bug found while looking at the result
+
+Verifying the new Watermark action in a browser showed its result thumbnail as
+a broken image — and so did Resize, so it wasn't the new code. `ImageBatchList`
+revoked its preview object URLs on React unmount with an empty dep array. Under
+Strict Mode dev double-invokes effects (mount → cleanup → mount) while `entries`
+— and the URLs created in its `useState` initializer — survive, so the second
+mount rendered URLs the first cleanup had already revoked. Every image tool's
+result preview was broken in `npm run dev`.
+
+Invisible to `npx playwright test`, which runs a production build where Strict
+Mode doesn't double-invoke — the same dev-only blind spot already documented for
+`GeoMap.tsx`'s `relative` class, and a reminder that "the e2e suite is green" and
+"the app looks right while you develop it" are different claims. Revocation now
+hangs off `pagehide`, which is the honest lifetime for these URLs and can never
+revoke one the component is still rendering.
+
+**Verification:** `tsc --noEmit` clean, lint clean, Vitest 752/752 (97 files),
+clean production build, bundle budget green (shared 181.5 KB of 210 KB), full
+Playwright suite 296/296 at `workers: 1`.

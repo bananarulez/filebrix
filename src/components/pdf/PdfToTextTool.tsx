@@ -1,65 +1,60 @@
 "use client";
 
-import { useState } from "react";
-import { FileDropZone } from "@/components/tools/FileDropZone";
-import { FileInfo } from "@/components/tools/FileInfo";
-import { ProcessingStatus, type ProcessingState } from "@/components/tools/ProcessingStatus";
+import { useEffect, useState } from "react";
+import { ProcessingStatus } from "@/components/tools/ProcessingStatus";
 import { ErrorPanel } from "@/components/tools/ErrorPanel";
 import { DownloadResult } from "@/components/tools/DownloadResult";
-import { openPdfRenderSession } from "@/engines/pdf/render/session";
+import { usePdfWorkspace } from "./PdfWorkspace";
 import { ProcessingError, type ProcessingErrorCode } from "@/lib/errors/ProcessingError";
 
 const NO_TEXT_MESSAGE = "No extractable text was found. This document may be scanned.";
 
-type ToolState =
-  | { status: Exclude<ProcessingState, "error"> }
-  | { status: "error"; message: string; code?: ProcessingErrorCode };
+interface ToolError {
+  message: string;
+  code?: ProcessingErrorCode;
+}
 
-function errorFrom(cause: unknown, fallback: string): { message: string; code?: ProcessingErrorCode } {
+function errorFrom(cause: unknown, fallback: string): ToolError {
   if (cause instanceof ProcessingError) return { message: cause.message, code: cause.code };
   return { message: fallback };
 }
 
+/**
+ * Presentational with respect to the file, and it extracts through the
+ * `PdfWorkspace`'s already-open pdf.js session rather than opening and
+ * closing one of its own. Keyed on `documentKey` by `PdfStudioApp`, so a new
+ * file remounts it with no extracted text.
+ */
 export function PdfToTextTool() {
-  const [file, setFile] = useState<File | null>(null);
-  const [state, setState] = useState<ToolState>({ status: "idle" });
+  const { documents } = usePdfWorkspace();
+  const doc = documents[0] ?? null;
+  const session = doc?.session ?? null;
+
   const [text, setText] = useState<string | null>(null);
   const [noTextFound, setNoTextFound] = useState(false);
+  const [error, setError] = useState<ToolError | null>(null);
   const [copied, setCopied] = useState(false);
 
-  async function handleFilesSelected(selected: File[]) {
-    const [selectedFile] = selected;
-    if (!selectedFile) return;
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    session
+      .extractText()
+      .then((extraction) => {
+        if (cancelled) return;
+        if (!extraction.hasExtractableText) setNoTextFound(true);
+        else setText(extraction.pages.join("\n\n"));
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setError(errorFrom(cause, "Could not extract text from this PDF."));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
 
-    setFile(selectedFile);
-    setText(null);
-    setNoTextFound(false);
-    setCopied(false);
-    setState({ status: "processing" });
-
-    let session: Awaited<ReturnType<typeof openPdfRenderSession>> | null = null;
-    try {
-      session = await openPdfRenderSession(selectedFile);
-      const extraction = await session.extractText();
-      if (!extraction.hasExtractableText) {
-        setNoTextFound(true);
-      } else {
-        setText(extraction.pages.join("\n\n"));
-      }
-      setState({ status: "done" });
-    } catch (cause) {
-      setState({ status: "error", ...errorFrom(cause, "Could not extract text from this PDF.") });
-    } finally {
-      await session?.close().catch(() => {});
-    }
-  }
-
-  function handleClear() {
-    setFile(null);
-    setText(null);
-    setNoTextFound(false);
-    setState({ status: "idle" });
-  }
+  // Derived, not stored — see the equivalent note in PdfMetadataTool.
+  const isExtracting = Boolean(session) && text === null && !noTextFound && !error;
 
   async function handleCopy() {
     if (!text) return;
@@ -68,33 +63,10 @@ export function PdfToTextTool() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  const isBusy = state.status === "processing";
-
   return (
     <div className="flex flex-col gap-4">
-      <FileDropZone
-        label={file ? "Drop a different PDF file" : "Drop a PDF file here"}
-        hint="Nothing is uploaded — text is extracted entirely on your device. No OCR is performed."
-        accept=".pdf,application/pdf"
-        onFilesSelected={handleFilesSelected}
-        toolSlug="pdf-to-txt"
-      />
-
-      {file && (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <FileInfo file={file} detectedFormat="pdf" />
-          <button
-            type="button"
-            onClick={handleClear}
-            className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:border-gray-400 hover:text-gray-900 dark:border-gray-700 dark:text-gray-300 dark:hover:text-white"
-          >
-            Clear
-          </button>
-        </div>
-      )}
-
-      {isBusy && <ProcessingStatus state="processing" />}
-      {state.status === "error" && <ErrorPanel message={state.message} code={state.code} />}
+      {isExtracting && <ProcessingStatus state="processing" />}
+      {error && <ErrorPanel message={error.message} code={error.code} />}
 
       {noTextFound && (
         <div

@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { screen, waitFor, fireEvent } from "@testing-library/react";
 import { ImageTransformTool } from "@/components/image/ImageTransformTool";
+import { renderWithImageWorkspace } from "./imageWorkspaceHarness";
 import { processImageFile } from "@/engines/image";
 import { detectFileType } from "@/lib/detect/detectFile";
 
@@ -30,9 +31,15 @@ function makeFile(name: string): File {
   return new File(["stub"], name, { type: "image/jpeg" });
 }
 
-function selectFiles(files: File[]) {
+/**
+ * The shared ImageWorkspace detects each file's format (an async step) before
+ * any tool renders its controls, so selection has to be awaited — a tool used
+ * to receive its files synchronously from its own drop zone.
+ */
+async function selectFiles(files: File[]) {
   const input = document.querySelector('input[type="file"]') as HTMLInputElement;
   fireEvent.change(input, { target: { files } });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Clear" })).toBeInTheDocument());
 }
 
 describe("ImageTransformTool — rotate", () => {
@@ -40,8 +47,8 @@ describe("ImageTransformTool — rotate", () => {
     mockedDetect.mockResolvedValue({ format: "jpg", confidence: "signature" });
     mockedProcess.mockResolvedValue(new Blob(["img"], { type: "image/jpeg" }));
 
-    render(<ImageTransformTool mode="rotate" />);
-    selectFiles([makeFile("photo.jpg")]);
+    renderWithImageWorkspace(<ImageTransformTool mode="rotate" />);
+    await selectFiles([makeFile("photo.jpg")]);
 
     fireEvent.click(screen.getByRole("button", { name: "Rotate right" }));
     fireEvent.click(screen.getByRole("button", { name: "Rotate right" }));
@@ -58,8 +65,8 @@ describe("ImageTransformTool — flip", () => {
     mockedDetect.mockResolvedValue({ format: "png", confidence: "signature" });
     mockedProcess.mockResolvedValue(new Blob(["img"], { type: "image/png" }));
 
-    render(<ImageTransformTool mode="flip" />);
-    selectFiles([makeFile("photo.png")]);
+    renderWithImageWorkspace(<ImageTransformTool mode="flip" />);
+    await selectFiles([makeFile("photo.png")]);
 
     fireEvent.click(screen.getByLabelText(/Vertical/));
     fireEvent.click(screen.getByRole("button", { name: "Flip" }));
@@ -75,8 +82,8 @@ describe("ImageTransformTool — resize", () => {
     mockedDetect.mockResolvedValue({ format: "jpg", confidence: "signature" });
     mockedProcess.mockResolvedValue(new Blob(["img"], { type: "image/jpeg" }));
 
-    render(<ImageTransformTool mode="resize" />);
-    selectFiles([makeFile("photo.jpg")]);
+    renderWithImageWorkspace(<ImageTransformTool mode="resize" />);
+    await selectFiles([makeFile("photo.jpg")]);
 
     const widthInput = screen.getByLabelText("Width (px)");
     fireEvent.change(widthInput, { target: { value: "200" } });
@@ -94,8 +101,8 @@ describe("ImageTransformTool — resize", () => {
 
 describe("ImageTransformTool — compress", () => {
   it("warns that PNG compression won't shrink the file much", async () => {
-    render(<ImageTransformTool mode="compress" />);
-    selectFiles([makeFile("photo.png")]);
+    renderWithImageWorkspace(<ImageTransformTool mode="compress" />);
+    await selectFiles([makeFile("photo.png")]);
     // File name ends in .png regardless of the mocked mime type in makeFile.
     await waitFor(() => expect(screen.getByText(/won't shrink it much/i)).toBeInTheDocument());
   });

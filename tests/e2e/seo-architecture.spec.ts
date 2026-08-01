@@ -18,15 +18,15 @@ const CAPABILITY_PATHS = [
   "/data-studio/edit",
   "/data-studio/convert",
   "/data-studio/analyze",
-  "/pdf-tools/pages",
-  "/pdf-tools/convert",
-  "/pdf-tools/metadata",
-  "/image-tools/edit",
-  "/image-tools/convert",
-  "/image-tools/metadata",
-  "/geospatial-tools/view",
-  "/geospatial-tools/edit",
-  "/geospatial-tools/convert",
+  "/pdf-studio/pages",
+  "/pdf-studio/convert",
+  "/pdf-studio/metadata",
+  "/image-studio/edit",
+  "/image-studio/convert",
+  "/image-studio/metadata",
+  "/geospatial-studio/view",
+  "/geospatial-studio/edit",
+  "/geospatial-studio/convert",
 ];
 
 test.describe("Capability index pages", () => {
@@ -39,7 +39,7 @@ test.describe("Capability index pages", () => {
   });
 
   test("a capability page lists its own tools and links each to its real page", async ({ page }) => {
-    await page.goto("/pdf-tools/pages");
+    await page.goto("/pdf-studio/pages");
     await expect(page.getByRole("heading", { level: 1, name: /Pages — PDF Studio/ })).toBeVisible();
 
     for (const name of ["Merge PDF", "Split PDF", "Rotate PDF"]) {
@@ -53,7 +53,7 @@ test.describe("Capability index pages", () => {
   });
 
   test("a capability page emits CollectionPage + ItemList and BreadcrumbList structured data", async ({ page }) => {
-    await page.goto("/image-tools/convert");
+    await page.goto("/image-studio/convert");
     const blocks = await jsonLd(page);
     expect(typesOf(blocks)).toEqual(expect.arrayContaining(["CollectionPage", "BreadcrumbList"]));
 
@@ -65,17 +65,17 @@ test.describe("Capability index pages", () => {
   });
 
   test("a capability page's breadcrumb is Home → Application → Capability and navigates", async ({ page }) => {
-    await page.goto("/geospatial-tools/convert");
+    await page.goto("/geospatial-studio/convert");
     const breadcrumb = page.getByRole("navigation", { name: "Breadcrumb" });
     await expect(breadcrumb.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/");
     await expect(breadcrumb.getByRole("link", { name: "Geospatial Studio" })).toHaveAttribute(
       "href",
-      "/geospatial-tools"
+      "/geospatial-studio"
     );
     await expect(breadcrumb.getByText("Convert")).toBeVisible();
 
     await breadcrumb.getByRole("link", { name: "Geospatial Studio" }).click();
-    await expect(page).toHaveURL(/\/geospatial-tools$/);
+    await expect(page).toHaveURL(/\/geospatial-studio$/);
   });
 
   test("a tool page's breadcrumb passes through its Capability, and that crumb navigates", async ({ page }) => {
@@ -88,13 +88,13 @@ test.describe("Capability index pages", () => {
     const breadcrumb = page.getByRole("navigation", { name: "Breadcrumb" });
     await expect(breadcrumb.getByRole("link", { name: "Image Studio", exact: true })).toHaveAttribute(
       "href",
-      "/image-tools"
+      "/image-studio"
     );
     const capabilityCrumb = breadcrumb.getByRole("link", { name: "Convert", exact: true });
-    await expect(capabilityCrumb).toHaveAttribute("href", "/image-tools/convert");
+    await expect(capabilityCrumb).toHaveAttribute("href", "/image-studio/convert");
 
     await capabilityCrumb.click();
-    await expect(page).toHaveURL(/\/image-tools\/convert$/);
+    await expect(page).toHaveURL(/\/image-studio\/convert$/);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   });
 
@@ -145,15 +145,16 @@ test.describe("Capability index pages", () => {
     await expect(siblings.getByRole("link", { name: "Converter" })).toHaveCount(0);
 
     const relatedApps = page.getByRole("navigation", { name: "Related applications" });
-    await expect(relatedApps.getByRole("link", { name: "PDF Studio" })).toHaveAttribute("href", "/pdf-tools");
+    await expect(relatedApps.getByRole("link", { name: "PDF Studio" })).toHaveAttribute("href", "/pdf-studio");
     await expect(relatedApps.getByRole("link", { name: "Data Studio" })).toHaveCount(0);
   });
 
   test("capabilities with no standalone tools have no index page (404, not a thin page)", async ({ page }) => {
-    // PDF Studio's Security and Image Studio's View are real in-app
-    // capabilities with no standalone tool behind them, so indexing them
-    // would publish a page listing zero tools.
-    for (const path of ["/pdf-tools/security", "/image-tools/view"]) {
+    // PDF Studio's and Image Studio's View tabs are real in-app capabilities
+    // with no standalone tool behind them, so indexing them would publish a
+    // page listing zero tools. /pdf-studio/security is in this list too: the
+    // capability itself was removed, so the URL must still not resolve.
+    for (const path of ["/pdf-studio/view", "/image-studio/view", "/pdf-studio/security"]) {
       const response = await page.goto(path);
       expect(response?.status(), `${path} should not exist`).toBe(404);
     }
@@ -164,7 +165,7 @@ test.describe("Capability index pages", () => {
     // only the in-app summary; the GIS expansion gave it real tools
     // (GeoJSON Statistics and the derived-geometry actions), which is exactly
     // the condition the index-page rule tracks.
-    const response = await page.goto("/geospatial-tools/analyze");
+    const response = await page.goto("/geospatial-studio/analyze");
     expect(response?.status()).toBe(200);
     await expect(page.getByRole("link", { name: /GeoJSON Statistics/i })).toBeVisible();
   });
@@ -176,13 +177,13 @@ test.describe("Capability index pages", () => {
       expect(body, `sitemap should list ${path}`).toContain(`${baseURL}${path}</loc>`);
     }
     // The three capabilities without an index page must not be listed.
-    expect(body).not.toContain(`${baseURL}/pdf-tools/security</loc>`);
+    expect(body).not.toContain(`${baseURL}/pdf-studio/security</loc>`);
   });
 });
 
 test.describe("Structured data consistency across page types", () => {
   test("an Application page emits SoftwareApplication + FAQPage + BreadcrumbList", async ({ page }) => {
-    await page.goto("/pdf-tools");
+    await page.goto("/pdf-studio");
     const types = typesOf(await jsonLd(page));
     expect(types).toEqual(expect.arrayContaining(["SoftwareApplication", "FAQPage", "BreadcrumbList"]));
   });
@@ -205,7 +206,7 @@ test.describe("Structured data consistency across page types", () => {
   });
 
   test("every JSON-LD block on every page type is valid JSON with a schema.org context", async ({ page }) => {
-    for (const path of ["/", "/pdf-tools", "/pdf-tools/pages", "/pdf/merge", "/developer-tools/text"]) {
+    for (const path of ["/", "/pdf-studio", "/pdf-studio/pages", "/pdf/merge", "/developer-tools/text"]) {
       await page.goto(path);
       const blocks = await jsonLd(page);
       expect(blocks.length, `${path} should emit structured data`).toBeGreaterThan(0);
@@ -228,7 +229,7 @@ test.describe("Internal linking", () => {
    */
   test("a Studio page renders no capability nav and no related-applications block", async ({ page }) => {
     for (const [path, title] of [
-      ["/image-tools", "Image Studio"],
+      ["/image-studio", "Image Studio"],
       ["/data-studio", "Data Studio"],
     ] as const) {
       await page.goto(path);
@@ -251,7 +252,7 @@ test.describe("Internal linking", () => {
   test("Home → Application → Tool is traversable by a crawler", async ({ page }) => {
     await page.goto("/");
     await page.locator("footer").getByRole("link", { name: "PDF Studio", exact: true }).click();
-    await expect(page).toHaveURL(/\/pdf-tools$/);
+    await expect(page).toHaveURL(/\/pdf-studio$/);
 
     // The Studio page's own "Related tools" list is now the crawl path down
     // to individual tools, since the capability hop no longer exists here.
@@ -264,7 +265,7 @@ test.describe("Internal linking", () => {
   });
 
   test("Capability → Tool still works for anyone arriving from the sitemap", async ({ page }) => {
-    await page.goto("/pdf-tools/metadata");
+    await page.goto("/pdf-studio/metadata");
     await page.getByRole("link", { name: /^PDF Metadata Viewer/ }).click();
     await expect(page).toHaveURL(/\/pdf\/metadata-viewer$/);
   });

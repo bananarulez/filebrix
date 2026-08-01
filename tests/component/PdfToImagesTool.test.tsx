@@ -1,10 +1,17 @@
-import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { screen, waitFor, fireEvent } from "@testing-library/react";
 import { PdfToImagesTool } from "@/components/pdf/PdfToImagesTool";
 import { openPdfRenderSession } from "@/engines/pdf/render/session";
+import { inspectPdfFile } from "@/engines/pdf";
+import { makePdfInfo, renderWithPdfWorkspace } from "./pdfWorkspaceHarness";
 
 vi.mock("@/engines/pdf/render/session", () => ({
   openPdfRenderSession: vi.fn(),
+}));
+
+// The shared PdfWorkspace inspects a dropped PDF's structure before any tool sees it.
+vi.mock("@/engines/pdf", () => ({
+  inspectPdfFile: vi.fn(),
 }));
 
 vi.mock("jszip", () => ({
@@ -16,6 +23,10 @@ vi.mock("jszip", () => ({
 }));
 
 const mockedOpenSession = vi.mocked(openPdfRenderSession);
+
+beforeEach(() => {
+  vi.mocked(inspectPdfFile).mockResolvedValue(makePdfInfo(1));
+});
 
 function makeFile(name: string): File {
   return new File(["stub"], name, { type: "application/pdf" });
@@ -41,21 +52,23 @@ describe("PdfToImagesTool", () => {
     const session = makeSession(1);
     mockedOpenSession.mockResolvedValue(session);
 
-    render(<PdfToImagesTool />);
+    renderWithPdfWorkspace(<PdfToImagesTool />);
     selectFile(makeFile("doc.pdf"));
     await waitFor(() => expect(screen.getByRole("button", { name: "Convert to images" })).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: "Convert to images" }));
     await waitFor(() => expect(session.renderPageImage).toHaveBeenCalledWith(0, { format: "png", scale: 2 }));
     await waitFor(() => expect(screen.getByRole("button", { name: /download page-1\.png/i })).toBeInTheDocument());
-    expect(session.close).toHaveBeenCalled();
+    // The session belongs to the workspace now, and stays open for the other
+    // tabs — this tool must not close what it didn't open.
+    expect(session.close).not.toHaveBeenCalled();
   });
 
   it("packages a multi-page PDF's images into a zip", async () => {
     const session = makeSession(3);
     mockedOpenSession.mockResolvedValue(session);
 
-    render(<PdfToImagesTool />);
+    renderWithPdfWorkspace(<PdfToImagesTool />);
     selectFile(makeFile("doc.pdf"));
     await waitFor(() => expect(screen.getByRole("button", { name: "Convert to images" })).toBeInTheDocument());
 
@@ -68,7 +81,7 @@ describe("PdfToImagesTool", () => {
     const session = makeSession(1);
     mockedOpenSession.mockResolvedValue(session);
 
-    render(<PdfToImagesTool />);
+    renderWithPdfWorkspace(<PdfToImagesTool />);
     selectFile(makeFile("doc.pdf"));
     await waitFor(() => expect(screen.getByLabelText(/JPEG/)).toBeInTheDocument());
     fireEvent.click(screen.getByLabelText(/JPEG/));

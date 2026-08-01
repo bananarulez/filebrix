@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { STUDIO_TAB_PANEL_ID } from "./tabIds";
 
 interface AppShellProps {
   toolbar: ReactNode;
@@ -6,6 +7,16 @@ interface AppShellProps {
   /** Main preview area (a table, map, thumbnail grid — whatever the app previews). */
   children: ReactNode;
   exportBar?: ReactNode;
+  /**
+   * The id of the `Toolbar` tab currently selected (`studioTabId(tab)`),
+   * which turns the main area into that tab's `role="tabpanel"`.
+   *
+   * A prop rather than something this component derives, because `toolbar`
+   * arrives as an already-rendered node — `AppShell` can't see which mode is
+   * active. Omitting it leaves the plain, role-less `<div>` this always was,
+   * so a future non-tabbed consumer isn't forced into tab semantics.
+   */
+  activeTabId?: string;
 }
 
 /**
@@ -23,14 +34,24 @@ interface AppShellProps {
  * width needs to stay predictable for ad placement in the side margins, so
  * this never breaks out of its container.
  */
-export function AppShell({ toolbar, sidePanel, children, exportBar }: AppShellProps) {
+export function AppShell({ toolbar, sidePanel, children, exportBar, activeTabId }: AppShellProps) {
   return (
     <div className="mx-auto flex w-full flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-3 dark:border-gray-800">
         {toolbar}
       </div>
       {sidePanel && <div className="flex flex-wrap gap-4">{sidePanel}</div>}
-      <div className="min-w-0">{children}</div>
+      {/* No `tabIndex={0}` on the panel: ARIA only asks for that when a panel
+          holds nothing focusable, and every Studio panel contains at least the
+          drop zone or a control. */}
+      <div
+        className="min-w-0"
+        id={activeTabId ? STUDIO_TAB_PANEL_ID : undefined}
+        role={activeTabId ? "tabpanel" : undefined}
+        aria-labelledby={activeTabId}
+      >
+        {children}
+      </div>
       {exportBar && (
         <div className="flex flex-wrap items-center gap-3 border-t border-gray-200 pt-4 dark:border-gray-800">
           {exportBar}

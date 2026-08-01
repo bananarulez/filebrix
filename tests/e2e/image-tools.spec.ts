@@ -252,42 +252,53 @@ test.describe("Network privacy", () => {
   });
 });
 
-test.describe("Image Studio hub (/image-tools)", () => {
+test.describe("Image Studio hub (/image-studio)", () => {
   test("Edit tab's action picker switches between actions, each rendering its own unchanged UI", async ({ page }) => {
-    await page.goto("/image-tools");
+    await page.goto("/image-studio");
     await page.getByRole("tab", { name: "Edit", exact: true }).click();
 
-    await page.getByRole("tab", { name: "Crop", exact: true }).click();
+    await page.getByRole("radio", { name: "Crop", exact: true }).click();
     await page.locator('input[type="file"]').first().setInputFiles(fixture("opaque.jpg"));
     await expect(page.getByRole("button", { name: "Apply Crop" })).toBeVisible();
 
-    await page.getByRole("tab", { name: "Brightness", exact: true }).click();
+    await page.getByRole("radio", { name: "Brightness", exact: true }).click();
     await page.locator('input[type="file"]').first().setInputFiles(fixture("opaque.jpg"));
     await expect(page.getByRole("slider", { name: "Brightness" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Apply brightness" })).toBeVisible();
 
-    await page.getByRole("tab", { name: "Grayscale", exact: true }).click();
+    await page.getByRole("radio", { name: "Grayscale", exact: true }).click();
     await page.locator('input[type="file"]').first().setInputFiles(fixture("opaque.jpg"));
     await expect(page.getByRole("button", { name: "Convert to grayscale" })).toBeVisible();
   });
 
   test("Convert tab's pair picker switches between conversions, including SVG to PNG", async ({ page }) => {
-    await page.goto("/image-tools");
+    await page.goto("/image-studio");
     await page.getByRole("tab", { name: "Convert", exact: true }).click();
 
-    await page.getByRole("tab", { name: "PNG to JPG", exact: true }).click();
-    await page.locator('input[type="file"]').first().setInputFiles(fixture("opaque.jpg"));
+    await page.getByRole("radio", { name: "PNG to JPG", exact: true }).click();
+    // A PNG, not a JPEG: the shared workspace gates each conversion on the
+    // loaded image's detected format, so dropping a JPEG here would (by
+    // design) fall back to a JPEG-capable conversion instead.
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("transparent.png"));
     await expect(page.getByRole("button", { name: "Convert", exact: true })).toBeVisible();
 
-    await page.getByRole("tab", { name: "SVG to PNG", exact: true }).click();
+    // Dropping an SVG re-gates the picker: every raster pair becomes
+    // unavailable, so the Studio moves to the one conversion this file *can*
+    // do rather than leaving a tool mounted that can't run. (Choosing SVG to
+    // PNG first would be the wrong order now — it's disabled while a PNG is
+    // loaded, which is exactly what the gating is for.)
     await page.locator('input[type="file"]').first().setInputFiles(fixture("normal.svg"));
+    await expect(page.getByRole("radio", { name: "SVG to PNG", exact: true })).toHaveAttribute(
+      "aria-checked",
+      "true"
+    );
     await expect(page.getByRole("button", { name: "Convert", exact: true })).toBeVisible();
   });
 
   test("Crop produces an image smaller than the source, matching the selected region", async ({ page }) => {
-    await page.goto("/image-tools");
+    await page.goto("/image-studio");
     await page.getByRole("tab", { name: "Edit", exact: true }).click();
-    await page.getByRole("tab", { name: "Crop", exact: true }).click();
+    await page.getByRole("radio", { name: "Crop", exact: true }).click();
     await page.locator('input[type="file"]').first().setInputFiles(fixture("opaque.jpg"));
     await expect(page.getByRole("button", { name: "Apply Crop" })).toBeEnabled();
     await page.getByRole("button", { name: "Apply Crop" }).click();
@@ -302,30 +313,45 @@ test.describe("Image Studio hub (/image-tools)", () => {
     expect(result.height).toBeLessThan(150);
   });
 
-  test("Watermark shows a placeholder — no file drop, no engine call, no off-origin network activity", async ({
-    page,
-    baseURL,
-  }) => {
-    const externalRequests: string[] = [];
-    const baseOrigin = baseURL ? new URL(baseURL).origin : null;
-    page.on("request", (request) => {
-      const url = new URL(request.url());
-      if (baseOrigin && url.origin !== baseOrigin) externalRequests.push(request.url());
-    });
-
-    await page.goto("/image-tools");
+  test("Watermark is a real Edit action: it draws the text onto the output pixels", async ({ page }) => {
+    await page.goto("/image-studio");
     await page.getByRole("tab", { name: "Edit", exact: true }).click();
-    await page.getByRole("tab", { name: "Watermark", exact: true }).click();
+    await page.getByRole("radio", { name: "Watermark", exact: true }).click();
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("opaque.jpg"));
 
-    await expect(page.getByText(/isn.t available yet/i)).toBeVisible();
-    await expect(page.locator('input[type="file"]')).toHaveCount(0);
+    // Bright green, full opacity, large, centered — so the pixel assertion
+    // below is about the watermark and nothing else. opaque.jpg is a solid
+    // non-green image (see the transparency test above).
+    await page.getByLabel("Watermark color").fill("#00ff00");
+    await page.getByLabel("Opacity").fill("1");
+    await page.getByLabel("Size").fill("0.2");
+    await page.getByRole("button", { name: "Apply watermark" }).click();
 
-    await page.waitForTimeout(500);
-    expect(externalRequests).toEqual([]);
+    const downloadButton = page.getByRole("button", { name: "Download" });
+    await expect(downloadButton).toBeVisible({ timeout: 20_000 });
+
+    // Sample the middle of the image, where a centered watermark must be.
+    const result = await downloadAndSamplePixel(page, downloadButton, "image/jpeg", 100, 75);
+    expect(result.width).toBe(200);
+    expect(result.height).toBe(150);
+    expect(result.rgb[1]).toBeGreaterThan(120); // green channel lifted by the text
+  });
+
+  test("Watermark keeps the batch shape every other Edit action uses", async ({ page }) => {
+    await page.goto("/image-studio");
+    await page.getByRole("tab", { name: "Edit", exact: true }).click();
+    await page.getByRole("radio", { name: "Watermark", exact: true }).click();
+    await page
+      .locator('input[type="file"]')
+      .first()
+      .setInputFiles([fixture("opaque.jpg"), fixture("gps-tagged.jpg")]);
+
+    await page.getByRole("button", { name: "Apply watermark" }).click();
+    await expect(page.getByRole("button", { name: /download all/i })).toBeVisible({ timeout: 30_000 });
   });
 
   test("View tab: zoom controls change the displayed percentage", async ({ page }) => {
-    await page.goto("/image-tools");
+    await page.goto("/image-studio");
     await page.locator('input[type="file"]').first().setInputFiles(fixture("opaque.jpg"));
     await expect(page.getByText("100%")).toBeVisible();
 
@@ -341,9 +367,9 @@ test.describe("Image Studio hub (/image-tools)", () => {
   });
 
   test("editing an image and switching to View offers an original-vs-edited compare", async ({ page }) => {
-    await page.goto("/image-tools");
+    await page.goto("/image-studio");
     await page.getByRole("tab", { name: "Edit", exact: true }).click();
-    await page.getByRole("tab", { name: "Grayscale", exact: true }).click();
+    await page.getByRole("radio", { name: "Grayscale", exact: true }).click();
     await page.locator('input[type="file"]').first().setInputFiles(fixture("opaque.jpg"));
     await page.getByRole("button", { name: "Convert to grayscale" }).click();
     await expect(page.getByRole("button", { name: "Download" })).toBeVisible({ timeout: 20_000 });
@@ -364,23 +390,23 @@ test.describe("Image Studio hub (/image-tools)", () => {
     await expect(page.locator('[aria-label="Action"]')).toHaveCount(0);
 
     await page.getByRole("tab", { name: "Convert", exact: true }).click();
-    await expect(page.getByRole("tab", { name: "PNG to JPG", exact: true })).toBeVisible();
+    await expect(page.getByRole("radio", { name: "PNG to JPG", exact: true })).toBeVisible();
   });
 
   test("Metadata tab hosts both View and Remove together, and Edit's picker no longer offers Remove Metadata", async ({
     page,
   }) => {
-    await page.goto("/image-tools");
+    await page.goto("/image-studio");
     await page.getByRole("tab", { name: "Metadata", exact: true }).click();
     const actionPicker = page.locator('[aria-label="Action"]');
 
-    await expect(actionPicker.getByRole("tab", { name: "View", exact: true })).toBeVisible();
-    await expect(actionPicker.getByRole("tab", { name: "Remove", exact: true })).toBeVisible();
+    await expect(actionPicker.getByRole("radio", { name: "View", exact: true })).toBeVisible();
+    await expect(actionPicker.getByRole("radio", { name: "Remove", exact: true })).toBeVisible();
 
     await page.locator('input[type="file"]').first().setInputFiles(fixture("exif-oriented.jpg"));
     await expect(page.getByText("TestCam")).toBeVisible({ timeout: 20_000 });
 
-    await actionPicker.getByRole("tab", { name: "Remove", exact: true }).click();
+    await actionPicker.getByRole("radio", { name: "Remove", exact: true }).click();
     await page.locator('input[type="file"]').first().setInputFiles(fixture("exif-oriented.jpg"));
     await expect(page.getByRole("button", { name: "Download" })).toBeVisible({ timeout: 20_000 });
 
@@ -400,5 +426,57 @@ test.describe("Image Studio hub (/image-tools)", () => {
     await expect(page.locator('[aria-label="Action"]')).toHaveCount(0);
     await page.locator('input[type="file"]').setInputFiles(fixture("exif-oriented.jpg"));
     await expect(page.getByRole("button", { name: "Download" })).toBeVisible({ timeout: 20_000 });
+  });
+});
+
+/**
+ * Same property as PDF Studio's own "keeps the loaded file" suite: the
+ * images live in `ImageWorkspace`, so moving between Edit actions and tabs
+ * never silently discards them.
+ */
+test.describe("Image Studio keeps the loaded images across tabs", () => {
+  test("an image dropped on Edit is still loaded on another Edit action and on Metadata", async ({
+    page,
+  }) => {
+    await page.goto("/image-studio");
+    await page.getByRole("tab", { name: "Edit", exact: true }).click();
+    await page.getByRole("radio", { name: "Resize", exact: true }).click();
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("gps-tagged.jpg"));
+    await expect(page.getByRole("button", { name: "Resize", exact: true })).toBeVisible();
+
+    await page.getByRole("radio", { name: "Rotate", exact: true }).click();
+    await expect(page.getByText("gps-tagged.jpg")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Rotate right", exact: true })).toBeVisible();
+
+    // A different tab entirely — and one that actually reads the file, so
+    // this proves the same File object came through, not just its name.
+    await page.getByRole("tab", { name: "Metadata", exact: true }).click();
+    await expect(page.getByText(/contains gps location data/i)).toBeVisible({ timeout: 20_000 });
+
+    await page.getByRole("button", { name: "Clear", exact: true }).click();
+    await expect(page.getByText("gps-tagged.jpg")).toHaveCount(0);
+  });
+
+  test("an action the loaded image's format can't support is disabled, with the reason shown", async ({
+    page,
+  }) => {
+    await page.goto("/image-studio");
+    await page.getByRole("tab", { name: "Convert", exact: true }).click();
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("transparent.png"));
+    await expect(page.getByText("transparent.png")).toBeVisible();
+
+    // PNG in, so the WebP- and SVG-sourced conversions can't run on it.
+    const webpToJpg = page.getByRole("radio", { name: "WebP to JPG", exact: true });
+    await expect(webpToJpg).toHaveAttribute("aria-disabled", "true");
+    await expect(webpToJpg).toHaveAttribute("title", /needs WebP/i);
+    await expect(page.getByRole("radio", { name: "SVG to PNG", exact: true })).toHaveAttribute(
+      "aria-disabled",
+      "true"
+    );
+    // ...while the PNG-sourced ones stay available.
+    await expect(page.getByRole("radio", { name: "PNG to WebP", exact: true })).not.toHaveAttribute(
+      "aria-disabled",
+      "true"
+    );
   });
 });

@@ -24,6 +24,37 @@ export interface ImageProcessOptions {
    * (png/webp) to an opaque format (jpg) — otherwise transparent pixels
    * composite against canvas's default transparent black. */
   backgroundColor?: string;
+  /** Text drawn over the finished image. See `WatermarkOptions`. */
+  watermark?: WatermarkOptions;
+}
+
+export type WatermarkPosition =
+  | "top-left"
+  | "top-right"
+  | "center"
+  | "bottom-left"
+  | "bottom-right";
+
+/**
+ * A text watermark, drawn as the last pass before encoding.
+ *
+ * Deliberately text-only for now: an *image* watermark would mean decoding a
+ * second source in the worker and a second file input in the UI, which is a
+ * materially bigger feature than the one this replaced a placeholder for.
+ *
+ * `fontScale` is a fraction of the image's smaller side rather than an
+ * absolute pixel size, so the same settings look the same on a 400px thumbnail
+ * and a 6000px photo — an absolute size would be invisible on one and
+ * enormous on the other, and this pipeline is batch-first.
+ */
+export interface WatermarkOptions {
+  text: string;
+  position: WatermarkPosition;
+  /** 0–1. */
+  opacity: number;
+  /** Fraction of the image's smaller side, e.g. 0.06 ≈ 6%. */
+  fontScale: number;
+  color: string;
 }
 
 export interface ImageDimensions {

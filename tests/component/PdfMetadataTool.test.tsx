@@ -1,15 +1,36 @@
-import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { screen, waitFor, fireEvent } from "@testing-library/react";
 import { PdfMetadataTool } from "@/components/pdf/PdfMetadataTool";
-import { readPdfMetadataFile, removePdfMetadataFile } from "@/engines/pdf";
+import { inspectPdfFile, readPdfMetadataFile, removePdfMetadataFile } from "@/engines/pdf";
+import { openPdfRenderSession } from "@/engines/pdf/render/session";
+import { makePdfInfo, renderWithPdfWorkspace } from "./pdfWorkspaceHarness";
 
 vi.mock("@/engines/pdf", () => ({
+  // `inspectPdfFile` is what the shared PdfWorkspace calls on load; the two
+  // metadata functions are this tool's own.
+  inspectPdfFile: vi.fn(),
   readPdfMetadataFile: vi.fn(),
   removePdfMetadataFile: vi.fn(),
 }));
 
+vi.mock("@/engines/pdf/render/session", () => ({
+  openPdfRenderSession: vi.fn(),
+}));
+
 const mockedRead = vi.mocked(readPdfMetadataFile);
 const mockedRemove = vi.mocked(removePdfMetadataFile);
+
+/** The workspace opens every dropped PDF once (structure + render session) before any tool sees it. */
+beforeEach(() => {
+  vi.mocked(inspectPdfFile).mockResolvedValue(makePdfInfo(1));
+  vi.mocked(openPdfRenderSession).mockResolvedValue({
+    pageCount: 1,
+    renderThumbnail: vi.fn(),
+    renderPageImage: vi.fn(),
+    extractText: vi.fn(),
+    close: vi.fn().mockResolvedValue(undefined),
+  });
+});
 
 function makeFile(name: string): File {
   return new File(["stub"], name, { type: "application/pdf" });
@@ -29,7 +50,7 @@ describe("PdfMetadataTool — view mode", () => {
       hasSignature: false,
     });
 
-    render(<PdfMetadataTool mode="view" />);
+    renderWithPdfWorkspace(<PdfMetadataTool mode="view" />);
     selectFile(makeFile("doc.pdf"));
 
     await waitFor(() => expect(screen.getByText("My Document")).toBeInTheDocument());
@@ -41,7 +62,7 @@ describe("PdfMetadataTool — view mode", () => {
   it("shows an em dash for fields that aren't present", async () => {
     mockedRead.mockResolvedValue({ pageCount: 1, hasSignature: false });
 
-    render(<PdfMetadataTool mode="view" />);
+    renderWithPdfWorkspace(<PdfMetadataTool mode="view" />);
     selectFile(makeFile("doc.pdf"));
 
     await waitFor(() => expect(screen.getAllByText("—").length).toBeGreaterThan(0));
@@ -53,7 +74,7 @@ describe("PdfMetadataTool — remove mode", () => {
     mockedRead.mockResolvedValue({ title: "My Document", pageCount: 2, hasSignature: false });
     mockedRemove.mockResolvedValue(new Blob(["pdf"], { type: "application/pdf" }));
 
-    render(<PdfMetadataTool mode="remove" />);
+    renderWithPdfWorkspace(<PdfMetadataTool mode="remove" />);
     selectFile(makeFile("doc.pdf"));
 
     await waitFor(() => expect(screen.getByRole("button", { name: /remove metadata/i })).toBeInTheDocument());

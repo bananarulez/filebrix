@@ -4,7 +4,7 @@ import { STUDIOS, type StudioCategorySlug, type StudioAction } from "./studios";
 import { CATEGORIES } from "./categories";
 
 export interface CapabilityConfig {
-  /** Owning Application's category slug, e.g. "pdf-tools". */
+  /** Owning Application's category slug, e.g. "pdf-studio". */
   categorySlug: StudioCategorySlug;
   /** Owning Application's display name, e.g. "PDF Studio" (from CATEGORIES — rule 8). */
   appName: string;
