@@ -55,6 +55,38 @@ the new attribute filter in `GeoJsonViewerTool`.
 
 ## Deferred
 
+### Restoring `<Link>` prefetch under static export
+
+**Status: broken, deliberately not fixed.** Next 16's client router prefetches
+route segments from URLs like
+`/developer-tools/__next.developer-tools.__PAGE__.txt`, using `.` as the
+segment separator — but `output: "export"` writes those payloads as nested
+*directories*: `/developer-tools/__next.developer-tools/__PAGE__.txt`. Both
+paths were checked directly (404 and 200 respectively), against a local
+`wrangler dev` and the deployed site, so this is a Next export bug rather than
+anything about Cloudflare.
+
+**What it costs:** link prefetching does nothing, and each prefetch logs a 404.
+**What it doesn't cost:** correctness. Navigation is still client-side —
+`tests/e2e/workspace-persistence.spec.ts` passes, and it asserts that a loaded
+file survives clicking an in-app link, which is only true if the JS module
+registry survives the navigation (`lib/workspaceFiles.ts`). A hard navigation
+would fail that test loudly.
+
+**Why not fixed:** the only available fix is a hand-rolled path rewrite in
+`worker/index.ts` — strip `__next.`, split the remainder on `.`, rejoin with
+`/` — plus a broad `run_worker_first` glob to route prefetches through the
+Worker at all. That is a new correctness surface (any route slug containing a
+dot would mis-map, and a wrong mapping serves the *wrong page's* payload)
+bought for a performance nicety, on pages that are static, tiny and
+CDN-cached.
+
+**What would change the answer:** a Next release that fixes the mismatch — try
+removing this entry after an upgrade and re-running the 404 sweep. Failing
+that, real evidence that navigation feels slow, which would make the trade
+worth re-examining.
+
+
 ### GeoParquet
 Highest-synergy format left: DuckDB-WASM and the Parquet reader already ship,
 so this is mostly the WKB decoder from above plus GeoParquet's metadata

@@ -676,6 +676,15 @@ error message pointing at the cause.
   was a permissions problem, sending someone after an API token they never
   needed — **an error path that speculates is worse than one that just
   reports.**
+- **`<Link>` prefetch is broken under static export, knowingly.** Next's
+  client router asks for `/x/__next.x.__PAGE__.txt` while the exporter writes
+  `/x/__next.x/__PAGE__.txt` — dots where the files use directories, checked
+  both ways (404 and 200). Only prefetching is lost; navigation stays
+  client-side, which `tests/e2e/workspace-persistence.spec.ts` proves by
+  asserting a loaded file survives an in-app link click. The available fix is
+  a hand-rolled path rewrite in the Worker, which would mis-map any slug
+  containing a dot and serve the wrong page's payload — not worth it for a
+  prefetch. See `ROADMAP.md`; retry after a Next upgrade.
 - **Cloudflare bindings are typed by hand** in `worker/index.ts`.
   `wrangler types` emits either types that resolve to `any` (because
   `@cloudflare/workers-types` isn't installed — a probe assigning a binding to
