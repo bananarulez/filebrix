@@ -3935,12 +3935,21 @@ way and do work.
   and it could plausibly resolve either way. Curling a running dev server
   answered it: `206`, `Content-Range: …/34242586`, a file `Last-Modified` —
   the static file wins, and local development is unchanged.
-- **`wrangler login`'s OAuth has no R2 scope whatsoever.** `--scopes-list`
-  offers `d1`, `pages`, `queues` and a dozen others, nothing for R2. So the
-  bucket is managed in the dashboard or with an API token — never with the
-  session that deploys the Worker. `npm run cf:upload-engine-assets` attempts
-  the CLI path and prints exactly that if it's refused, rather than leaving
-  someone to guess at a permissions error.
+- **A missing OAuth scope is not a refusal.** `wrangler login --scopes-list`
+  offers `d1`, `pages`, `queues` and a dozen more, and nothing at all for R2,
+  which reads like the CLI simply cannot manage buckets. It can:
+  `wrangler r2 object put --remote` works with the ordinary OAuth session.
+  What blocks it beforehand is `code: 10042 — Please enable R2 through the
+  Cloudflare Dashboard`, an *account* error rather than a permissions one, so
+  enabling R2 is the only step that genuinely needs the dashboard.
+  The first draft of this entry recorded the wrong conclusion, and the upload
+  script's error path repeated it as a guess — which cost the person running
+  it a hunt for an API token they never needed. The real fault was the script
+  spawning `npx.cmd`, which Node has refused to execFile without
+  `shell: true` since the CVE-2024-27980 fix in 20.12. It runs
+  `node .../wrangler/bin/wrangler.js` now, and its catch block prints the
+  actual error instead of a theory. **An error path that speculates about a
+  cause is worse than one that just reports the failure.**
 
 ### The test that connects three unrelated files
 
