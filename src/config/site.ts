@@ -189,7 +189,7 @@ export const SITE_CONFIG = {
    * someone has sent a test message to it and received it. This is the one
    * thing in this file that cannot be verified by reading it.
    */
-  domainConfirmed: false,
+  domainConfirmed: true,
 } as const;
 
 /** Contact channels in display order, with the ones you haven't set up filtered out. */
