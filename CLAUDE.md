@@ -645,11 +645,27 @@ off-origin requests. Don't take that shortcut later.
   (ESLint doesn't read it), and linting the bundled worker exhausts Node's 4 GB
   heap — `npm run lint` dies with "Ineffective mark-compacts near heap limit",
   which reads like a project-wide problem rather than one unignored directory.
-- **`wrangler login`'s OAuth has no R2 scope at all** (`--scopes-list` offers
-  `d1`, `pages`, `queues`, … and nothing for R2), so R2 buckets are managed in
-  the dashboard or with an API token, never with the OAuth session that deploys
-  the Worker. `npm run cf:upload-engine-assets` tries the CLI and says exactly
-  this if it's refused.
+- **The only R2 step that needs the dashboard is enabling R2 on the account.**
+  `wrangler login`'s `--scopes-list` shows no R2 scope at all (`d1`, `pages`,
+  `queues`, … and nothing for R2), which looks like it should mean the CLI
+  can't touch R2 — it doesn't. `wrangler r2 object put --remote` works fine
+  with the ordinary OAuth session once R2 is switched on; before that it fails
+  with `code: 10042 — Please enable R2 through the Cloudflare Dashboard`,
+  which is an *account* error, not a permissions one. Don't read a missing
+  scope as a refusal without testing it.
+- **`--remote` is not optional on `wrangler r2 object put`.** Without it
+  wrangler writes to the local simulated bucket and prints "Upload complete"
+  regardless, so a deployment can fail on a missing object that appeared to
+  upload successfully.
+- **Never spawn `npx` from a script on Windows.** Node has refused to
+  execFile/spawn a `.cmd` without `shell: true` since 20.12 (the CVE-2024-27980
+  fix), so `execFileSync("npx.cmd", …)` dies with `EINVAL` before the tool
+  runs. `scripts/upload-engine-assets.mjs` invokes
+  `node node_modules/wrangler/bin/wrangler.js` instead — no shell, identical on
+  every platform. Its first version didn't, and its catch block *guessed* the
+  failure was a permissions problem, which sent someone looking for an API
+  token they never needed. A script's error path must report what happened,
+  not speculate about why.
 - **Cloudflare bindings are typed by hand** in `src/types/cloudflare-env.d.ts`,
   not by `wrangler types`, which emits either an `R2Bucket` that resolves to
   `any` (`@cloudflare/workers-types` isn't installed — a probe assigning the

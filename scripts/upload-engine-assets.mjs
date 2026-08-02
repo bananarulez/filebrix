@@ -21,6 +21,16 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BUCKET = "filebrix-engine-assets";
 const FILES = ["duckdb-mvp.wasm", "duckdb-eh.wasm"];
 
+/*
+ * Wrangler is run as `node node_modules/wrangler/bin/wrangler.js`, not via
+ * `npx`. On Windows `npx` is `npx.cmd`, and Node has refused to let
+ * execFile/spawn launch a .cmd without `shell: true` since 20.12 (the fix for
+ * CVE-2024-27980) — so the obvious version of this script died with EINVAL
+ * before wrangler ever ran. Invoking the JS entry point with the current Node
+ * binary sidesteps the shell entirely and behaves the same on every platform.
+ */
+const WRANGLER = path.join(ROOT, "node_modules", "wrangler", "bin", "wrangler.js");
+
 const missing = FILES.filter((name) => !existsSync(path.join(ROOT, "public", "duckdb", name)));
 if (missing.length > 0) {
   console.error(
@@ -37,9 +47,9 @@ for (const name of FILES) {
 
   try {
     execFileSync(
-      process.platform === "win32" ? "npx.cmd" : "npx",
+      process.execPath,
       [
-        "wrangler",
+        WRANGLER,
         "r2",
         "object",
         "put",
@@ -54,13 +64,16 @@ for (const name of FILES) {
       ],
       { cwd: ROOT, stdio: "inherit" }
     );
-  } catch {
+  } catch (error) {
+    // Report what actually happened rather than guessing at a cause. An
+    // earlier version asserted "this is probably a permissions problem",
+    // which sent someone hunting for an API token when the real fault was
+    // this script failing to spawn wrangler at all.
+    console.error(`\n[upload-engine-assets] Upload of ${name} failed: ${error.message}`);
     console.error(
-      `\n[upload-engine-assets] Upload of ${name} failed.\n` +
-        "  If this is a permissions error, `wrangler login`'s OAuth scopes do not\n" +
-        "  cover R2 (there is no r2:write scope). Either upload both files by hand\n" +
-        `  in the dashboard (R2 -> ${BUCKET} -> folder "duckdb"), or create an API\n` +
-        "  token with R2 read+write and re-run with CLOUDFLARE_API_TOKEN set."
+      "  wrangler prints the reason above. If it is an authentication or\n" +
+        "  permissions error, upload both files by hand instead (R2 -> " +
+        `${BUCKET} -> folder "duckdb"), which needs no CLI access at all.`
     );
     process.exit(1);
   }
