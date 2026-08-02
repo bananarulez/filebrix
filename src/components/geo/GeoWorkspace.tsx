@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { FileDropZone } from "@/components/tools/FileDropZone";
 import { FileInfo } from "@/components/tools/FileInfo";
 import { ProcessingStatus } from "@/components/tools/ProcessingStatus";
@@ -10,20 +10,24 @@ import { detectFileType } from "@/lib/detect/detectFile";
 import { parseCsvFile, summarizeGeoJson, type BBox2D } from "@/engines/geospatial";
 import type { NormalizedTable } from "@/engines/spreadsheet";
 import { parseAnyGeoFile } from "./parseAnyGeoFile";
+import { forgetWorkspaceFiles, recallWorkspaceFiles, rememberWorkspaceFiles } from "@/lib/workspaceFiles";
 
 /**
  * Every format the Studio's single drop zone accepts. `csv` is included
  * because CSV to GeoJSON is a Convert action — it's a source format here,
  * never a geometry document.
  */
-export type GeoWorkspaceFormat = "geojson" | "kml" | "gpx" | "csv";
+export type GeoWorkspaceFormat = "geojson" | "topojson" | "kml" | "kmz" | "gpx" | "shapefile" | "csv";
 
-export const GEO_WORKSPACE_ACCEPT = ".geojson,.json,.kml,.gpx,.csv";
+export const GEO_WORKSPACE_ACCEPT = ".geojson,.json,.topojson,.kml,.kmz,.gpx,.zip,.csv";
 
 const FORMAT_LABEL: Record<GeoWorkspaceFormat, string> = {
   geojson: "GeoJSON",
+  topojson: "TopoJSON",
   kml: "KML",
+  kmz: "KMZ",
   gpx: "GPX",
+  shapefile: "Shapefile",
   csv: "CSV",
 };
 
@@ -111,7 +115,10 @@ export function GeoWorkspace({ children }: { children: ReactNode }) {
   const [error, setError] = useState<WorkspaceError | null>(null);
   const [documentKey, setDocumentKey] = useState(0);
 
+  const loadStartedRef = useRef(false);
+
   const clear = useCallback(() => {
+    forgetWorkspaceFiles("geospatial");
     setDocumentKey((key) => key + 1);
     setFile(null);
     setGeojson(null);
@@ -123,6 +130,7 @@ export function GeoWorkspace({ children }: { children: ReactNode }) {
   }, []);
 
   const loadFile = useCallback(async (selected: File) => {
+    loadStartedRef.current = true;
     setDocumentKey((key) => key + 1);
     setFile(selected);
     setGeojson(null);
@@ -141,6 +149,7 @@ export function GeoWorkspace({ children }: { children: ReactNode }) {
         setCsvTable(await parseCsvFile(selected));
         setSourceFormat("csv");
         setStatus("ready");
+        rememberWorkspaceFiles("geospatial", [selected], ["csv"]);
         return;
       }
 
@@ -152,11 +161,33 @@ export function GeoWorkspace({ children }: { children: ReactNode }) {
       // more specific errors against it.
       setBbox(await summarizeGeoJson(parsed).then((summary) => summary.bbox).catch(() => null));
       setStatus("ready");
+      // Every geo action is gated on the detected format already
+      // (`actionFormats.ts`), and an action the file can't support falls back
+      // to one it can — so unlike Image/Data there is nothing extra to check
+      // before adopting it on the next page.
+      rememberWorkspaceFiles("geospatial", [selected], [parsedFormat]);
     } catch (cause) {
       setError(errorFrom(cause, "Could not read this file."));
       setStatus("error");
     }
   }, []);
+
+  /** Adopt the file the user already had open on the geo tool page they came from. */
+  useEffect(() => {
+    if (loadStartedRef.current) return;
+    const recalled = recallWorkspaceFiles("geospatial");
+    const [file] = recalled?.files ?? [];
+    if (!file) return;
+    let cancelled = false;
+    // Deferred for the same reason as PdfWorkspace's recall — see that file.
+    queueMicrotask(() => {
+      if (cancelled || loadStartedRef.current) return;
+      void loadFile(file);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadFile]);
 
   const value = useMemo<GeoWorkspaceValue>(
     () => ({
@@ -189,7 +220,7 @@ export function GeoFilePanel({ toolSlug }: { toolSlug?: string }) {
   return (
     <div className="flex flex-col gap-4">
       <FileDropZone
-        label={file ? "Drop a different file" : "Drop a GeoJSON, KML, GPX or CSV file here"}
+        label={file ? "Drop a different file" : "Drop a GeoJSON, TopoJSON, KML, KMZ, GPX, zipped Shapefile or CSV file here"}
         hint="Nothing is uploaded — the file is detected and processed entirely on your device."
         accept={GEO_WORKSPACE_ACCEPT}
         onFilesSelected={(files) => {

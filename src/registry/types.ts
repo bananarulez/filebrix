@@ -24,8 +24,10 @@ export type FileFormat =
   | "heic"
   | "geojson"
   | "kml"
+  | "kmz"
   | "gpx"
   | "shapefile"
+  | "topojson"
   | "sql";
 
 export type Engine =

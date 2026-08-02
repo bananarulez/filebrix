@@ -1,4 +1,4 @@
-import { tools as allTools, searchTools } from "./index";
+import { tools as allTools, searchTools, searchTerms, matchesAllTerms } from "./index";
 import { getAppNavItems, type AppNavItem } from "./navigation";
 import { getOwningCategorySlug } from "./capabilities";
 import { STUDIOS } from "./studios";
@@ -52,8 +52,8 @@ function findOwningApp(tool: ToolDefinition, appNavItems: AppNavItem[]): AppNavI
  * owning Application exactly once, ahead of every tool result.
  */
 export function searchSite(query: string, toolList: ToolDefinition[] = allTools): SiteSearchResult[] {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) return [];
+  const terms = searchTerms(query);
+  if (terms.length === 0) return [];
 
   const appNavItems = getAppNavItems();
   const matchedAppSlugs = new Set<string>();
@@ -65,30 +65,24 @@ export function searchSite(query: string, toolList: ToolDefinition[] = allTools)
     appResults.push(toAppResult(item));
   }
 
-  // 1. Application name or capability (e.g. "PDF" -> PDF Studio, "Analyze"
-  //    -> Data Studio / Geospatial Studio, "Encoding" -> Developer Toolkit).
+  // 1. Application name, capability label, or accepted file format — matched
+  //    as one haystack so a multi-word query can satisfy its terms from
+  //    different fields. "view pdf" needs "pdf" from the name and "view" from
+  //    a capability label; testing each field separately would find neither.
+  //    Format labels are the same ones the Universal File Drop shows, so a
+  //    format search understands both the raw code ("xlsx") and its display
+  //    name ("Excel").
   for (const item of appNavItems) {
-    const nameMatches = item.name.toLowerCase().includes(normalized);
-    const capabilityMatches = item.capabilities.some((capability) =>
-      capability.label.toLowerCase().includes(normalized)
-    );
-    if (nameMatches || capabilityMatches) addApp(item);
+    const studio = STUDIOS.find((candidate) => candidate.categorySlug === item.slug);
+    const formats = (studio?.acceptedFileTypes ?? []).flatMap((format) => [
+      format,
+      FILE_FORMAT_LABELS[format],
+    ]);
+    const haystack = [item.name, ...item.capabilities.map((capability) => capability.label), ...formats];
+    if (matchesAllTerms(terms, haystack)) addApp(item);
   }
 
-  // 2. Accepted file format (e.g. "csv" or "excel" -> Data Studio) — reuses
-  //    the same format labels the Universal File Drop already shows, so a
-  //    format search understands both the raw code and its display name.
-  for (const studio of STUDIOS) {
-    const matchesFormat = studio.acceptedFileTypes.some(
-      (format) => format.includes(normalized) || FILE_FORMAT_LABELS[format].toLowerCase().includes(normalized)
-    );
-    if (matchesFormat) {
-      const item = appNavItems.find((candidate) => candidate.slug === studio.categorySlug);
-      if (item) addApp(item);
-    }
-  }
-
-  // 3. Tools (name/description/keywords — see registry/index.ts#searchTools),
+  // 2. Tools (name/description/keywords — see registry/index.ts#searchTools),
   //    each also surfacing its own owning Application.
   const matchedTools = searchTools(query, toolList);
   for (const tool of matchedTools) {

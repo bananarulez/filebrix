@@ -53,6 +53,26 @@ describe("searchSite", () => {
     expect(appNames(results)).toEqual(["PDF Studio"]);
   });
 
+  it("matches a multi-word query whose terms come from different fields", () => {
+    // The reported gap: "view pdf" found nothing, because search tested the
+    // whole query as one substring and no single string contains "view pdf".
+    // "pdf" comes from the Application name, "view" from a capability label.
+    expect(appNames(searchSite("view pdf"))).toEqual(["PDF Studio"]);
+    expect(appNames(searchSite("pdf viewer"))).toEqual(["PDF Studio"]);
+    expect(appNames(searchSite("pdf view"))).toEqual(["PDF Studio"]);
+  });
+
+  it("treats extra words as narrowing (AND), not widening (OR)", () => {
+    // "csv" alone reaches Data Studio and Geospatial Studio (both accept it);
+    // adding "excel" must drop the one that has nothing to do with Excel.
+    expect(appNames(searchSite("csv"))).toContain("Geospatial Studio");
+    expect(appNames(searchSite("csv excel"))).toEqual(["Data Studio"]);
+  });
+
+  it("matches a tool whose terms are spread across its name", () => {
+    expect(toolNames(searchSite("csv excel"))).toContain("CSV to Excel Converter");
+  });
+
   it("matches Developer Toolkit via its own sub-category capability", () => {
     const results = searchSite("Encoding");
     expect(appNames(results)).toContain("Developer Toolkit");

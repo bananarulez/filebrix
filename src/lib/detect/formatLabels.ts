@@ -25,8 +25,10 @@ export const FILE_FORMAT_LABELS: Record<FileFormat, string> = {
   heic: "HEIC image",
   geojson: "GeoJSON file",
   kml: "KML file",
+  kmz: "KMZ file",
   gpx: "GPX file",
   shapefile: "Shapefile",
+  topojson: "TopoJSON file",
   sql: "SQL file",
 };
 

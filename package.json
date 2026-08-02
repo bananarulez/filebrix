@@ -48,7 +48,9 @@
     "proj4": "^2.20.9",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "shpjs": "^6.2.0",
     "sql-formatter": "^15.8.2",
+    "topojson-client": "^3.1.0",
     "utm": "^1.1.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
@@ -66,6 +68,8 @@
     "@types/proj4": "^2.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/topojson-client": "^3.1.5",
+    "@types/topojson-specification": "^1.0.5",
     "@types/utm": "^1.1.4",
     "@vitejs/plugin-react": "^6.0.4",
     "epsg-index": "^2.0.0",

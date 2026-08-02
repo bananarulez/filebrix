@@ -417,7 +417,8 @@ Initial PDF tools:
 * PDF Metadata Viewer
 * Remove PDF Metadata
 
-Potential later tools:
+Potential later tools (see ROADMAP.md for which of these have been assessed,
+and the verdict on each):
 
 * Compress PDF
 * HTML to PDF where browser-only quality is acceptable

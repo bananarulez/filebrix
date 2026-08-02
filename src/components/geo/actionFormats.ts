@@ -14,11 +14,17 @@ import type { GeoWorkspaceFormat } from "./GeoWorkspace";
  */
 export type ActionFormats = readonly GeoWorkspaceFormat[] | null;
 
-const ALL_GEOMETRY: readonly GeoWorkspaceFormat[] = ["geojson", "kml", "gpx"];
+/**
+ * Every format that reaches an engine op as GeoJSON. Shapefile and TopoJSON
+ * join KML and GPX here because `parseAnyGeoFile` normalizes all four before
+ * any op sees them — the gating is about what the *file* is, not about what
+ * the op can read.
+ */
+const ALL_GEOMETRY: readonly GeoWorkspaceFormat[] = ["geojson", "topojson", "kml", "kmz", "gpx", "shapefile"];
 
 export const ACTION_FORMATS: Record<string, ActionFormats> = {
   // --- View ---------------------------------------------------------------
-  geojson: ["geojson", "kml"],
+  geojson: ["geojson", "topojson", "kml", "kmz", "shapefile"],
   gpx: ["gpx"],
 
   // --- Edit ---------------------------------------------------------------
@@ -37,20 +43,27 @@ export const ACTION_FORMATS: Record<string, ActionFormats> = {
   "convex-hull": ALL_GEOMETRY,
 
   // --- Convert ------------------------------------------------------------
-  "kml-to-geojson": ["kml"],
+  "kml-to-geojson": ["kml", "kmz"],
   "geojson-to-kml": ["geojson"],
+  "shapefile-to-geojson": ["shapefile"],
+  "topojson-to-geojson": ["topojson"],
   "gpx-to-geojson": ["gpx"],
   "gpx-to-kml": ["gpx"],
   "geojson-to-csv": ["geojson"],
   "csv-to-geojson": ["csv"],
   "crs-converter": ALL_GEOMETRY,
   "coordinate-converter": null,
+  "utm-zone-finder": null,
+  "map-tile-calculator": null,
 };
 
 const FORMAT_LABEL: Record<GeoWorkspaceFormat, string> = {
   geojson: "GeoJSON",
+  topojson: "TopoJSON",
   kml: "KML",
+  kmz: "KMZ",
   gpx: "GPX",
+  shapefile: "Shapefile",
   csv: "CSV",
 };
 

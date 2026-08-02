@@ -133,7 +133,7 @@ via `postMessage`'s structured clone (a same-process, same-device transfer
 — not serialization to a wire format) and return a `Blob` the same way.
 
 **How long a file is held in memory (changed deliberately).** Each Studio
-now owns its loaded file centrally — `PdfWorkspace`, `ImageWorkspace`,
+owns its loaded file centrally — `PdfWorkspace`, `ImageWorkspace`,
 `GeoWorkspace`, and `SpreadsheetDataApp` — instead of each tool owning its
 own copy, so a file dropped once survives switching tabs and actions.
 The privacy-relevant consequence, stated plainly: the `File` (and, for
@@ -145,6 +145,29 @@ a network. It is released on **Clear**, on loading a different file, and on
 navigating away (the providers close PDF render sessions on replace, clear
 and unmount). A full page reload always starts empty — the same property
 `lib/fileHandoff.ts` relies on.
+
+**A second, deliberate extension of that lifetime: `lib/workspaceFiles.ts`.**
+So that moving between a Studio's tool URLs doesn't silently discard the
+user's file, the `File` reference is also held in a module-scoped, per-tab
+map keyed by engine, and re-adopted by the next page. Stated plainly, since
+it is a real widening of scope:
+
+- **What is kept:** the `File` object itself and its already-detected format
+  string. Nothing is parsed, copied, serialized, hashed or written anywhere;
+  the next page re-reads the same local file exactly as if the user had
+  dropped it again.
+- **Where:** a JavaScript variable in one browser tab. Never
+  `localStorage`/`sessionStorage`/IndexedDB/cookies (§6), never a network
+  request.
+- **For how long:** until the user clicks **Clear**, until a different file
+  is loaded, until 30 minutes pass, or until the document goes away — a
+  reload, a tab close, or navigating to another origin all discard it,
+  because the module is discarded with the page. There is no persistence
+  across sessions and nothing to clean up on exit.
+- **What it does not do:** it never sends a file to a page that didn't
+  already have access to it — every consumer is a tool on this same origin,
+  running the same local pipeline, and a tool that can't process the file
+  declines to adopt it rather than reading it.
 
 **Filenames are treated as untrusted input**, since a `File`'s `.name` is
 fully attacker-controlled (scripted drag-and-drop, not just an OS save

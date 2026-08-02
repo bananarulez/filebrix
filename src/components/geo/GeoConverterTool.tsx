@@ -17,7 +17,9 @@ export type GeoConversionKind =
   | "geojson-to-kml"
   | "gpx-to-geojson"
   | "gpx-to-kml"
-  | "geojson-to-csv";
+  | "geojson-to-csv"
+  | "shapefile-to-geojson"
+  | "topojson-to-geojson";
 
 interface ConversionConfig {
   sourceLabel: string;
@@ -32,10 +34,16 @@ function geoJsonBlob(geojson: unknown): Blob {
 
 const CONFIGS: Record<GeoConversionKind, ConversionConfig> = {
   "kml-to-geojson": {
-    sourceLabel: "a .kml",
-    accept: ".kml",
+    sourceLabel: "a .kml or .kmz",
+    accept: ".kml,.kmz",
     outputExtension: "geojson",
+    // KMZ is just a zipped KML, so one tool covers both rather than
+    // duplicating a near-identical page for the compressed variant.
     convert: async (file) => {
+      if (file.name.toLowerCase().endsWith(".kmz")) {
+        const { kmzToGeoJson } = await import("@/engines/geospatial/import/kmz");
+        return { blob: geoJsonBlob(await kmzToGeoJson(file)) };
+      }
       const { kmlTextToGeoJson } = await import("@/engines/geospatial/xml/kml");
       const geojson = await kmlTextToGeoJson(await file.text());
       return { blob: geoJsonBlob(geojson) };
@@ -78,6 +86,24 @@ const CONFIGS: Record<GeoConversionKind, ConversionConfig> = {
       return { blob: new Blob([kml], { type: "application/vnd.google-earth.kml+xml" }) };
     },
   },
+  "shapefile-to-geojson": {
+    sourceLabel: "a zipped shapefile",
+    accept: ".zip",
+    outputExtension: "geojson",
+    convert: async (file) => {
+      const { shapefileZipToGeoJson } = await import("@/engines/geospatial/import/shapefile");
+      return { blob: geoJsonBlob(await shapefileZipToGeoJson(file)) };
+    },
+  },
+  "topojson-to-geojson": {
+    sourceLabel: "a .topojson or .json",
+    accept: ".topojson,.json",
+    outputExtension: "geojson",
+    convert: async (file) => {
+      const { topoJsonTextToGeoJson } = await import("@/engines/geospatial/import/topojson");
+      return { blob: geoJsonBlob(await topoJsonTextToGeoJson(await file.text())) };
+    },
+  },
   "geojson-to-csv": {
     sourceLabel: "a .geojson or .json",
     accept: ".geojson,.json",
@@ -101,7 +127,8 @@ function errorFrom(cause: unknown, fallbackMessage: string): ToolError {
 
 /**
  * Powers every simple drop-file → convert → download geo tool (KML↔GeoJSON,
- * GPX→GeoJSON, GPX→KML, GeoJSON→CSV) — only `kind` differs per tool page,
+ * GPX→GeoJSON, GPX→KML, GeoJSON→CSV, Shapefile→GeoJSON, TopoJSON→GeoJSON)
+ * — only `kind` differs per tool page,
  * a `CONFIGS` record keyed by source/target format rather than a function
  * prop (functions can't cross the Server->Client Component boundary a page
  * renders across). CSV→GeoJSON needs an extra column-picking step and gets

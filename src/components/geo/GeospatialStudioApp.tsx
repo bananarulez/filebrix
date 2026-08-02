@@ -16,6 +16,7 @@ import { CoordinateConverterTool } from "./CoordinateConverterTool";
 import { GeoOperationTool, type GeoOperation } from "./GeoOperationTool";
 import { CrsConverterTool } from "./CrsConverterTool";
 import { GeoStatisticsTool } from "./GeoStatisticsTool";
+import { GeoCalculatorTool } from "./GeoCalculatorTool";
 import { GeoFilePanel, GeoWorkspace, useGeoWorkspace } from "./GeoWorkspace";
 import { actionNeedsFile, buildDisabledReasons } from "./actionFormats";
 
@@ -34,7 +35,9 @@ export type ConvertAction =
   | GeoConversionKind
   | "csv-to-geojson"
   | "coordinate-converter"
-  | "crs-converter";
+  | "crs-converter"
+  | "utm-zone-finder"
+  | "map-tile-calculator";
 
 interface GeospatialStudioAppProps {
   initialTab?: GeospatialStudioTab;
@@ -102,6 +105,8 @@ const OPERATION_ACTIONS = new Set<string>([
 ]);
 
 const CONVERT_ACTIONS: ConvertAction[] = [
+  "shapefile-to-geojson",
+  "topojson-to-geojson",
   "kml-to-geojson",
   "geojson-to-kml",
   "gpx-to-geojson",
@@ -110,8 +115,12 @@ const CONVERT_ACTIONS: ConvertAction[] = [
   "csv-to-geojson",
   "coordinate-converter",
   "crs-converter",
+  "utm-zone-finder",
+  "map-tile-calculator",
 ];
 const CONVERT_ACTION_LABEL: Record<ConvertAction, string> = {
+  "shapefile-to-geojson": "Shapefile to GeoJSON",
+  "topojson-to-geojson": "TopoJSON to GeoJSON",
   "kml-to-geojson": "KML to GeoJSON",
   "geojson-to-kml": "GeoJSON to KML",
   "gpx-to-geojson": "GPX to GeoJSON",
@@ -120,6 +129,8 @@ const CONVERT_ACTION_LABEL: Record<ConvertAction, string> = {
   "csv-to-geojson": "CSV to GeoJSON",
   "coordinate-converter": "Coordinate Converter",
   "crs-converter": "CRS Converter",
+  "utm-zone-finder": "UTM Zone Finder",
+  "map-tile-calculator": "Map Tile Calculator",
 };
 
 
@@ -127,8 +138,8 @@ const CONVERT_ACTION_LABEL: Record<ConvertAction, string> = {
  * The registry slug behind each action that has a standalone tool page, so
  * the Studio's one shared drop zone can claim a file handed over by the
  * homepage's Universal File Drop (CLAUDE.md rule 9). Actions with no entry
- * (Summary, Merge Features, Split Multi, Centroid, ...) exist only inside
- * the Studio and are never a handoff target.
+ * (Summary, Merge Features, Split Multi) exist only inside the Studio and
+ * are never a handoff target.
  *
  * Consolidating the ten tools' drop zones into `GeoFilePanel` dropped this
  * wiring: each tool used to pass its own `toolSlug`, and the shared panel
@@ -142,6 +153,11 @@ const TOOL_SLUG_BY_ACTION: Record<string, string> = {
   buffer: "geojson-buffer",
   dissolve: "geojson-dissolve",
   statistics: "geojson-statistics",
+  centroid: "geojson-centroid",
+  "bounding-box": "geojson-bounding-box",
+  "convex-hull": "geojson-convex-hull",
+  "shapefile-to-geojson": "shapefile-to-geojson",
+  "topojson-to-geojson": "topojson-to-geojson",
   "kml-to-geojson": "kml-to-geojson",
   "geojson-to-kml": "geojson-to-kml",
   "gpx-to-geojson": "gpx-to-geojson",
@@ -149,6 +165,8 @@ const TOOL_SLUG_BY_ACTION: Record<string, string> = {
   "geojson-to-csv": "geojson-to-csv",
   "csv-to-geojson": "csv-to-geojson",
   "crs-converter": "crs-converter",
+  "utm-zone-finder": "utm-zone-finder",
+  "map-tile-calculator": "map-tile-calculator",
 };
 
 function CsvNeedsConvertingNotice() {
@@ -165,7 +183,11 @@ function CsvNeedsConvertingNotice() {
 
 function isConversionKind(action: ConvertAction): action is GeoConversionKind {
   return (
-    action !== "csv-to-geojson" && action !== "coordinate-converter" && action !== "crs-converter"
+    action !== "csv-to-geojson" &&
+    action !== "coordinate-converter" &&
+    action !== "crs-converter" &&
+    action !== "utm-zone-finder" &&
+    action !== "map-tile-calculator"
   );
 }
 
@@ -332,6 +354,10 @@ function GeospatialStudioBody({
           <>
             {activeConvertAction === "csv-to-geojson" && <CsvToGeoJsonTool key={`csv-to-geojson-${documentKey}`} />}
             {activeConvertAction === "coordinate-converter" && <CoordinateConverterTool key="coordinate-converter" />}
+            {activeConvertAction === "utm-zone-finder" && <GeoCalculatorTool key="utm-zone-finder" mode="utm-zone" />}
+            {activeConvertAction === "map-tile-calculator" && (
+              <GeoCalculatorTool key="map-tile-calculator" mode="tile" />
+            )}
             {activeConvertAction === "crs-converter" && <CrsConverterTool key={`crs-converter-${documentKey}`} />}
             {isConversionKind(activeConvertAction) && (
               <GeoConverterTool key={`${activeConvertAction}-${documentKey}`} kind={activeConvertAction} />

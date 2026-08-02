@@ -14,6 +14,7 @@ import { ImageMetadataTool } from "./ImageMetadataTool";
 import { ImageViewerTool } from "./ImageViewerTool";
 import { ImageFilePanel, ImageWorkspace, useImageWorkspace } from "./ImageWorkspace";
 import {
+  ACTION_FORMATS,
   acceptFor,
   actionAcceptsMultiple,
   actionNeedsFile,
@@ -161,8 +162,14 @@ const CONVERT_PAIR_FORMATS: Partial<Record<ConvertPair, { source: RasterFormat; 
  * compare — see ImageTransformTool/ImageCropTool's `onResult` prop.
  */
 export function ImageStudioApp(props: ImageStudioAppProps) {
+  // A locked page may only adopt a carried-over file its one action can
+  // actually process — /convert/png-to-jpg must not silently pick up a JPEG.
+  // The Studio hub passes nothing: its picker re-gates to whatever is loaded.
+  const locked = props.lockedEditAction ?? props.lockedConvertPair ?? props.lockedMetadataMode;
+  const acceptFormats = locked ? (ACTION_FORMATS[locked] ?? undefined) : undefined;
+
   return (
-    <ImageWorkspace>
+    <ImageWorkspace acceptFormats={acceptFormats}>
       <ImageStudioBody {...props} />
     </ImageWorkspace>
   );

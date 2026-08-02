@@ -7,9 +7,10 @@ export const kmlToGeojsonTool: ToolDefinition = {
   routeGroup: "geo",
   category: "convert",
   engine: "geospatial",
-  description: "Convert a KML file to GeoJSON entirely in your browser — nothing is uploaded.",
-  keywords: ["kml to geojson", "convert kml to geojson", "kml to geojson online"],
-  acceptedFileTypes: ["kml"],
+  description:
+    "Convert a KML or KMZ file to GeoJSON entirely in your browser — nothing is uploaded.",
+  keywords: ["kml to geojson", "kmz to geojson", "convert kml to geojson", "kml to geojson online"],
+  acceptedFileTypes: ["kml", "kmz"],
   outputFileTypes: ["geojson"],
   // Rendered by the shared GeospatialStudioApp (Convert tab, locked to
   // "kml-to-geojson") — see appEntry and app/geo/kml-to-geojson/page.tsx.
@@ -29,6 +30,11 @@ export const kmlToGeojsonTool: ToolDefinition = {
       question: "Is it safe to convert a KML file from an untrusted source?",
       answer:
         "Yes. The browser's XML parser doesn't fetch external resources or resolve external entities, so this can't be used to read files from your device or make network requests (an XXE attack), even with a maliciously crafted file.",
+    },
+    {
+      question: "Can I convert a KMZ file too?",
+      answer:
+        "Yes. A KMZ is simply a zipped KML — the archive is unpacked in your browser and the KML inside is converted the same way. Images and icons packaged alongside it are ignored, since they have no GeoJSON equivalent.",
     },
     {
       question: "What KML elements are supported?",
