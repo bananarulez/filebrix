@@ -61,21 +61,22 @@ const nextConfig: NextConfig = {
       { source: "/duckdb-ext-files/:path*", headers: ENGINE_ASSET_CACHE_HEADERS },
     ];
   },
-  async rewrites() {
-    return [
-      {
-        // DuckDB-WASM autoloads engine extensions (e.g. parquet) by
-        // constructing /:version/:platform/:name.duckdb_extension.wasm
-        // against whatever `custom_extension_repository` is configured to
-        // (see engines/parquet/index.ts). We self-host these (see
-        // scripts/fetch-duckdb-extensions.mjs) and ignore the version
-        // segment entirely, so upgrading @duckdb/duckdb-wasm never breaks
-        // this rewrite — it always serves our own copy.
-        source: "/duckdb-ext/:version/:platform/:name.duckdb_extension.wasm",
-        destination: "/duckdb-ext-files/:platform/:name.duckdb_extension.wasm",
-      },
-    ];
-  },
+  /*
+   * There is deliberately no `rewrites()` here.
+   *
+   * DuckDB-WASM's extension autoload (/duckdb-ext/:version/:platform/...)
+   * used to be a rewrite to /duckdb-ext-files/:platform/..., and it does not
+   * survive deployment: on Cloudflare Workers, static assets are served
+   * before the Worker runs, so Next rewriting a path to a `public/` file
+   * inside the Worker has nothing to serve it from and 404s. Confirmed
+   * against a local `wrangler dev`, where it broke Parquet Viewer outright.
+   *
+   * It's `app/duckdb-ext/[version]/[platform]/[file]/route.ts` now, which
+   * behaves identically in `next dev`, `next start` and Workers. Prefer a
+   * route handler over a rewrite for anything that has to resolve to a
+   * static asset; `headers()` and `redirects()` are unaffected and both were
+   * verified working under the adapter.
+   */
   async redirects() {
     return [
       {

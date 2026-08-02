@@ -10,6 +10,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "cf:build": "opennextjs-cloudflare build",
+    "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "cf:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "cf:upload-engine-assets": "node scripts/upload-engine-assets.mjs",
     "postinstall": "node scripts/copy-duckdb-assets.mjs && node scripts/copy-pdfjs-assets.mjs && node scripts/copy-material-icons-assets.mjs && node scripts/copy-maplibre-assets.mjs && node scripts/generate-epsg-index.mjs"
   },
   "dependencies": {
@@ -56,6 +60,7 @@
   },
   "devDependencies": {
     "@lhci/cli": "^0.15.1",
+    "@opennextjs/cloudflare": "^1.20.2",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^7.0.0",
@@ -75,9 +80,11 @@
     "epsg-index": "^2.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.11",
+    "ignore": "^7.0.6",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "wrangler": "^4.118.0"
   }
 }

@@ -1,0 +1,37 @@
+# Headers for responses served directly by Cloudflare's static-asset handling,
+# which never reaches the Worker — so `headers()` in next.config.ts does not
+# apply to them. Confirmed against a local `wrangler dev`: an engine asset came
+# back with Cloudflare's default `Cache-Control: public, max-age=0,
+# must-revalidate` and no security headers, while an HTML page (which does go
+# through the Worker) carried the full set from next.config.ts.
+#
+# This file is Cloudflare-specific and inert everywhere else: `next dev` and
+# `next start` serve it as an ordinary public file and keep using
+# next.config.ts's `headers()`, so the two must be kept saying the same thing.
+# Wrangler excludes `_headers` from the upload automatically.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+# Self-hosted engine assets (DuckDB workers + extensions, pdf.js, MapLibre,
+# Material Icons). Mirrors ENGINE_ASSET_CACHE_HEADERS in next.config.ts: these
+# filenames aren't content-hashed, so a year + `immutable` would risk pinning a
+# stale worker or wasm after a dependency bump. A day of hard caching plus a
+# week of stale-while-revalidate is fast on repeat visits and self-healing
+# within days. The two .wasm binaries served from R2 don't appear here — they
+# never reach the asset handler, and their route sets the same value itself.
+/duckdb/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/duckdb-ext-files/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/pdfjs/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/maplibre/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/fonts/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800

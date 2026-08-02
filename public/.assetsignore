@@ -1,0 +1,12 @@
+# Read by Cloudflare when uploading Workers static assets. OpenNext copies
+# public/ into .open-next/assets/, so this file travels with it.
+#
+# DuckDB-WASM's two engine binaries are 39.4 MB and 34.2 MB, over Cloudflare's
+# 25 MiB per-file limit (Free and Paid alike), so the deploy would be rejected
+# outright with them in the manifest. They are served from R2 on this same
+# origin instead — see app/duckdb/[file]/route.ts and wrangler.jsonc.
+#
+# Everything else under public/duckdb/ (the two ~800 KB worker scripts) is well
+# under the limit and still ships as a normal static asset.
+duckdb/duckdb-mvp.wasm
+duckdb/duckdb-eh.wasm

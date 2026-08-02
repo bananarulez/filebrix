@@ -3842,3 +3842,139 @@ workstream and belongs with it.
 **Verification:** `tsc --noEmit` clean, lint clean, Vitest 787/787 (101
 files), clean production build, bundle budget green, full Playwright suite at
 `workers: 1`.
+
+## 44. Deployable to Cloudflare without giving up the same-origin guarantee
+
+Getting the site onto Cloudflare Workers turned out to hinge on one number:
+Cloudflare rejects any individual static asset over **25 MiB**, on the Free
+and Paid plans alike. DuckDB-WASM ships two engine binaries — 39.4 MB and
+34.2 MB — and they are the only files in the project anywhere near it. The
+deploy would have been refused outright.
+
+### The adapter, and why not a static export
+
+Every route here prerenders, so `output: "export"` looks like the natural
+fit and needs no adapter at all. It's the wrong call: `next.config.ts` is
+where the CSP headers, the permanent `/pdf-tools` → `/pdf-studio` redirects
+and the DuckDB extension rewrite live, and a static export supports **none**
+of `headers()`, `redirects()` or `rewrites()`. All three would have to be
+hand-ported into Cloudflare's `_headers`/`_redirects` files — three separate
+chances to quietly weaken the security headers on the site whose whole
+premise is those headers. `@opennextjs/cloudflare` keeps `next.config.ts`
+authoritative, at the cost of a Worker invocation per request.
+
+### The 25 MiB problem, solved without a second origin
+
+The two obvious fixes are an R2 *public* bucket, or binding the bucket to an
+`assets.filebrix.com` subdomain. Both are configuration-only, no code — and
+both are **cross-origin**, which means widening `connect-src 'self'` and
+weakening the e2e tests that assert this site makes zero off-origin requests.
+Those tests are the privacy claim, not paperwork about it.
+
+So instead: `public/.assetsignore` keeps the two binaries out of the upload,
+and `app/duckdb/[file]/route.ts` streams them out of a private R2 bucket at
+**the same `/duckdb/*.wasm` URLs they already had**. `engines/parquet/
+index.ts` needed no change at all, the CSP is untouched, and the route is
+GET-only behind a two-entry allow-list so a crafted `[file]` can't read any
+other key in the bucket.
+
+### The two things a real Worker caught that nothing else would
+
+Running the actual app against `wrangler dev` — not reading docs, not trusting
+a green build — found two failures, both caused by the same thing: **Cloudflare
+serves static assets before the Worker runs**, so Next never sees those
+requests and has no filesystem to resolve one against.
+
+- **`rewrites()` to a `public/` file 404s.** DuckDB's parquet extension
+  autoload was a rewrite from `/duckdb-ext/:version/:platform/...` to
+  `/duckdb-ext-files/:platform/...`, and it simply stopped working: the wasm
+  loaded from R2, then the extension 404'd and Parquet Viewer never rendered a
+  row. It's a route handler now. The symptom is worth remembering — DuckDB's
+  reaction to a missing extension isn't a network error but a low-level
+  `RuntimeError: function signature mismatch` inside the wasm module, the same
+  trap this project fell into once before with the CSP.
+- **`headers()` never reaches a static asset.** Engine assets came back with
+  Cloudflare's default `Cache-Control: public, max-age=0, must-revalidate` and
+  no security headers, quietly throwing away the caching decision
+  `ENGINE_ASSET_CACHE_HEADERS` exists to make. `public/_headers` restores it.
+
+Neither is loud. The first shows up as "the viewer doesn't work"; the second
+shows up as nothing whatsoever. A green `npm run build`, 790 unit tests and
+322 Playwright tests all passed with both bugs present, because every one of
+them runs against `next start`, where `public/` is served by Next itself.
+
+**And then the fix broke the other direction**, which is the part worth
+keeping. The replacement route read its binding as
+`getCloudflareContext().env.ASSETS ?? fetch(...)` — except
+`getCloudflareContext()` *throws* off-Worker rather than returning an empty
+context, so the fallback was unreachable and the route 500'd under
+`next start`. Eight Playwright tests caught it, all of them Parquet. Bindings
+now go through `lib/cloudflareBindings.ts`'s `cloudflareEnv()`, which catches.
+
+The lesson isn't about either API. It's that the local path and the deployed
+path each invalidate the other's assumptions, so a change touching both has to
+be run in **both** — a green Playwright suite said nothing about Workers, and
+a working Worker said nothing about `next start`.
+
+**The revised rule:** treat any `next.config.ts` behaviour that touches a
+static asset as broken until it's been seen working against `wrangler dev`.
+`redirects()` and `headers()` on Worker-served responses were checked the same
+way and do work.
+
+### Three more things that had to be checked rather than assumed
+
+- **`wrangler deploy --dry-run` cannot verify `.assetsignore`.** The ignore
+  function runs inside `syncAssets`, at upload time — a dry run reported
+  the identical file count with the patterns present and absent, tried both
+  ways. Reading wrangler's own source settled it, and showed the ignore
+  check runs *before* the size check, so a matched file is never measured.
+  The patterns are now verified in `tests/unit/engineAssets.test.ts` against
+  the same `ignore` package wrangler uses.
+- **The dev server serves the static file, not the new route.** A route at
+  `/duckdb/[file]` and a real file at `public/duckdb/duckdb-eh.wasm` collide,
+  and it could plausibly resolve either way. Curling a running dev server
+  answered it: `206`, `Content-Range: …/34242586`, a file `Last-Modified` —
+  the static file wins, and local development is unchanged.
+- **`wrangler login`'s OAuth has no R2 scope whatsoever.** `--scopes-list`
+  offers `d1`, `pages`, `queues` and a dozen others, nothing for R2. So the
+  bucket is managed in the dashboard or with an API token — never with the
+  session that deploys the Worker. `npm run cf:upload-engine-assets` attempts
+  the CLI path and prints exactly that if it's refused, rather than leaving
+  someone to guess at a permissions error.
+
+### The test that connects three unrelated files
+
+`tests/unit/engineAssets.test.ts` is the counterpart to `layout.spec.ts`:
+sizes on disk, the patterns in `.assetsignore`, and the allow-list in
+`lib/engineAssets.ts` all have to agree, and nothing in the type system
+connects them. It asserts every oversized file is excluded, that everything
+excluded is served back from R2, **and the inverse** — that nothing under the
+limit is excluded, because an over-broad `duckdb/*` would silently drop the
+two ~800 KB worker scripts and DuckDB would fail to start with no clue why.
+Confirmed to fail, with a readable message, when the patterns are removed.
+
+Without it, a future `@duckdb/duckdb-wasm` bump pushing a third file over the
+line would pass `tsc`, lint, every other test and `npm run build`, then be
+rejected by `wrangler deploy` on someone else's machine.
+
+### Two smaller findings
+
+- **ESLint has to ignore `.open-next/`.** It isn't covered by `.gitignore`
+  (ESLint doesn't read it), and linting the bundled worker exhausts Node's
+  4 GB heap: `npm run lint` died with "Ineffective mark-compacts near heap
+  limit", which reads like a project-wide failure rather than one unignored
+  build directory.
+- **Cloudflare bindings are typed by hand** (`src/types/cloudflare-env.d.ts`).
+  `wrangler types` emits either an `R2Bucket` that silently resolves to `any`
+  — a probe assigning the binding to a `number` compiled cleanly — or 550 KB
+  of workerd runtime types redefining `Request`/`Response` against the DOM
+  lib this app is built on. One binding with one method called on it isn't
+  worth either; same call as `src/types/shpjs.d.ts`.
+
+**Verification:** `tsc --noEmit` clean, lint clean, Vitest 790/790 (102
+files), clean production build, `opennextjs-cloudflare build` clean, bundle
+budget green (181.5 KB shared, 28.5 KB headroom), full Playwright suite at
+`workers: 1` — and, the one that actually mattered here, Parquet Viewer driven
+through a real browser against a local `wrangler dev`, reading its wasm from
+R2 and its extension through the new route, with zero off-origin requests and
+no console errors.
