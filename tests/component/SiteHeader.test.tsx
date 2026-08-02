@@ -9,9 +9,9 @@ describe("SiteHeader", () => {
 
     const expected: Record<string, string> = {
       "Data Studio": "/data-studio",
-      "PDF Studio": "/pdf-tools",
-      "Image Studio": "/image-tools",
-      "Geospatial Studio": "/geospatial-tools",
+      "PDF Studio": "/pdf-studio",
+      "Image Studio": "/image-studio",
+      "Geospatial Studio": "/geospatial-studio",
       "Developer Toolkit": "/developer-tools",
     };
     for (const [name, href] of Object.entries(expected)) {

@@ -20,7 +20,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "weekly" as const,
       priority: 0.6,
     })),
-    // The four Studios' capability index pages (`/pdf-tools/pages`, …) —
+    // The four Studios' capability index pages (`/pdf-studio/pages`, …) —
     // the same 0.6 priority as Developer Toolkit's sub-category pages,
     // since they're the same layer of the hierarchy (below an Application,
     // above a tool). Derived from `getAllCapabilities()`, so a capability

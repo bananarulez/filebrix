@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { FileDropZone } from "@/components/tools/FileDropZone";
+import { useImageWorkspace } from "./ImageWorkspace";
 
 const ZOOM_MIN = 25;
 const ZOOM_MAX = 400;
@@ -19,10 +19,24 @@ interface ImageViewerToolProps {
  * (SVG renders natively via a plain <img> — the browser rasterizes it for
  * display, no engine call needed) with an optional original-vs-edited
  * compare pane. Not a processing tool, so it doesn't reuse ImageBatchList —
- * there's nothing to download here. */
+ * there's nothing to download here.
+ *
+ * Presentational with respect to the files: they come from
+ * `ImageWorkspace`. That's also what retired this component's old
+ * "auto-load the just-edited file so the compare toggle is reachable"
+ * dance — the Edit tab now operates on the *same* shared file objects, so
+ * the edited source is already in this list by identity; all that's left is
+ * opening on it. */
 export function ImageViewerTool({ editedResult }: ImageViewerToolProps) {
-  const [files, setFiles] = useState<File[]>([]);
-  const [activeIndex, setActiveIndex] = useState(0);
+  const { files } = useImageWorkspace();
+  // Opens on the most recently edited image when there is one, so switching
+  // Edit -> View lands on the file the compare toggle applies to. A lazy
+  // initializer, not a render-time adjustment: this component only mounts
+  // when the View tab is active, so `editedResult` is already final here.
+  const [activeIndex, setActiveIndex] = useState(() => {
+    const index = editedResult ? files.indexOf(editedResult.sourceFile) : -1;
+    return index === -1 ? 0 : index;
+  });
   const [zoomPct, setZoomPct] = useState(100);
   const [showCompare, setShowCompare] = useState(false);
 
@@ -40,32 +54,6 @@ export function ImageViewerTool({ editedResult }: ImageViewerToolProps) {
     };
   }, [editedUrl]);
 
-  // Auto-load a just-completed Edit result so the compare toggle is reachable
-  // without the user re-dropping the exact same file (a fresh File object
-  // from a new drop/dialog would never === editedResult.sourceFile, so
-  // without this the toggle could never actually appear). Adjusting state
-  // during render in response to a changed prop, React's documented
-  // alternative to an effect for this exact case ("Adjusting state when a
-  // prop changes") — avoids the extra effect-triggered render pass.
-  //
-  // Initialized to `null`, not to `editedResult` — this component only
-  // mounts when the View tab is active (see ImageStudioApp), so it can
-  // mount *after* an edit already completed on the Edit tab, with
-  // `editedResult` already non-null on its very first render. Seeding the
-  // "seen" tracker with the actual initial prop value would make that first
-  // render look like "nothing changed" and skip the auto-load entirely.
-  const [seenEditedResult, setSeenEditedResult] = useState<typeof editedResult>(null);
-  if (editedResult !== seenEditedResult) {
-    setSeenEditedResult(editedResult);
-    if (editedResult) {
-      setFiles((current) =>
-        current.includes(editedResult.sourceFile) ? current : [editedResult.sourceFile, ...current]
-      );
-      setActiveIndex(0);
-      setZoomPct(100);
-    }
-  }
-
   const activeFile = files[activeIndex] ?? null;
   const activeUrl = urls[activeIndex] ?? null;
   const hasEditedMatch = Boolean(activeFile && editedResult && editedResult.sourceFile === activeFile);
@@ -73,24 +61,10 @@ export function ImageViewerTool({ editedResult }: ImageViewerToolProps) {
   // toggle whenever the active file stops matching the edited result.
   const effectiveShowCompare = showCompare && hasEditedMatch;
 
-  function handleFilesSelected(selected: File[]) {
-    setFiles(selected);
-    setActiveIndex(0);
-    setZoomPct(100);
-  }
-
   const imgStyle = { transform: `scale(${zoomPct / 100})`, transformOrigin: "top left" } as const;
 
   return (
     <div className="flex flex-col gap-4">
-      <FileDropZone
-        label={files.length > 0 ? "Drop different images" : "Drop PNG, JPEG, WebP or SVG images here"}
-        hint="Nothing is uploaded — images are viewed entirely on your device."
-        accept="image/png,image/jpeg,image/webp,image/svg+xml"
-        multiple
-        onFilesSelected={handleFilesSelected}
-      />
-
       {files.length > 1 && (
         <div className="flex flex-wrap gap-2">
           {files.map((file, index) => (

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AppShell } from "@/components/app-shell/AppShell";
 import { Toolbar, type ToolbarModeOption } from "@/components/app-shell/Toolbar";
+import { studioTabId } from "@/components/app-shell/tabIds";
 import { ActionPicker } from "@/components/app-shell/ActionPicker";
 import { GeoJsonViewerTool } from "./GeoJsonViewerTool";
 import { GpxViewerTool } from "./GpxViewerTool";
@@ -26,8 +27,7 @@ export type EditAction =
   | "buffer"
   | "dissolve"
   | "merge"
-  | "split-multi"
-  | "coordinate-editing";
+  | "split-multi";
 /** Analyze gained a picker once it hosted more than the one summary view. */
 export type AnalyzeAction = "summary" | "statistics" | "centroid" | "bounding-box" | "convex-hull";
 export type ConvertAction =
@@ -65,7 +65,6 @@ const EDIT_ACTIONS: EditAction[] = [
   "dissolve",
   "merge",
   "split-multi",
-  "coordinate-editing",
 ];
 const EDIT_ACTION_LABEL: Record<EditAction, string> = {
   simplify: "Simplify",
@@ -74,7 +73,6 @@ const EDIT_ACTION_LABEL: Record<EditAction, string> = {
   dissolve: "Dissolve",
   merge: "Merge Features",
   "split-multi": "Split Multi",
-  "coordinate-editing": "Coordinate Editing",
 };
 
 const ANALYZE_ACTIONS: AnalyzeAction[] = ["summary", "statistics", "centroid", "bounding-box", "convex-hull"];
@@ -125,6 +123,34 @@ const CONVERT_ACTION_LABEL: Record<ConvertAction, string> = {
 };
 
 
+/**
+ * The registry slug behind each action that has a standalone tool page, so
+ * the Studio's one shared drop zone can claim a file handed over by the
+ * homepage's Universal File Drop (CLAUDE.md rule 9). Actions with no entry
+ * (Summary, Merge Features, Split Multi, Centroid, ...) exist only inside
+ * the Studio and are never a handoff target.
+ *
+ * Consolidating the ten tools' drop zones into `GeoFilePanel` dropped this
+ * wiring: each tool used to pass its own `toolSlug`, and the shared panel
+ * was rendered with none.
+ */
+const TOOL_SLUG_BY_ACTION: Record<string, string> = {
+  geojson: "geojson-viewer",
+  gpx: "gpx-viewer",
+  simplify: "geojson-simplifier",
+  repair: "geojson-validator",
+  buffer: "geojson-buffer",
+  dissolve: "geojson-dissolve",
+  statistics: "geojson-statistics",
+  "kml-to-geojson": "kml-to-geojson",
+  "geojson-to-kml": "geojson-to-kml",
+  "gpx-to-geojson": "gpx-to-geojson",
+  "gpx-to-kml": "gpx-to-kml",
+  "geojson-to-csv": "geojson-to-csv",
+  "csv-to-geojson": "csv-to-geojson",
+  "crs-converter": "crs-converter",
+};
+
 function CsvNeedsConvertingNotice() {
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-6 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
@@ -132,18 +158,6 @@ function CsvNeedsConvertingNotice() {
       <p>
         Turn it into geometry first with Convert &rarr; CSV to GeoJSON, then come back to View. Nothing is
         uploaded either way.
-      </p>
-    </div>
-  );
-}
-
-function CoordinateEditingPlaceholder() {
-  return (
-    <div className="flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-6 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
-      <p className="font-medium text-gray-900 dark:text-white">Coordinate editing isn&rsquo;t available yet</p>
-      <p>
-        Manually adjusting a feature&rsquo;s coordinates on the map is planned for Geospatial Studio. This tab is
-        reserved for that feature — nothing is uploaded or processed here.
       </p>
     </div>
   );
@@ -172,10 +186,9 @@ function isConversionKind(action: ConvertAction): action is GeoConversionKind {
  * top-level View/Edit/Analyze/Convert tab bar always stays switchable,
  * matching Data/PDF/Image Studio.
  *
- * No `toolSlug` prop: every sub-component already owns its own
- * `FileDropZone`/`toolSlug` (`GeoConverterTool` uses `kind` directly);
- * `GeoAnalyzeTool` has no registry slug of its own (Analyze has no locked
- * URL, same as Image Studio's View tab).
+ * The active action's own registry slug is passed to the shared
+ * `GeoFilePanel` (see `TOOL_SLUG_BY_ACTION`) so the homepage's Universal
+ * File Drop handoff still reaches whichever tool the user is on.
  */
 /**
  * Wraps the Studio in the shared `GeoWorkspace`, which owns the one loaded
@@ -248,7 +261,7 @@ function GeospatialStudioBody({
     tab === "view" ? activeViewAction : tab === "edit" ? activeEditAction : tab === "analyze" ? activeAnalyzeAction : activeConvertAction;
 
   return (
-    <AppShell toolbar={<Toolbar modes={TAB_OPTIONS} activeMode={tab} onModeChange={setTab} />}>
+    <AppShell activeTabId={studioTabId(tab)} toolbar={<Toolbar modes={TAB_OPTIONS} activeMode={tab} onModeChange={setTab} />}>
       {/*
        * Order matches Data/PDF/Image Studio: tab bar (in the shell's own
        * toolbar slot) -> action picker -> drop zone -> the tool's own UI.
@@ -284,7 +297,7 @@ function GeospatialStudioBody({
           />
         )}
 
-        {actionNeedsFile(activeAction) && <GeoFilePanel />}
+        {actionNeedsFile(activeAction) && <GeoFilePanel toolSlug={TOOL_SLUG_BY_ACTION[activeAction]} />}
 
         {tab === "view" &&
           (sourceFormat === "csv" ? (
@@ -302,7 +315,6 @@ function GeospatialStudioBody({
             {OPERATION_ACTIONS.has(activeEditAction) && (
               <GeoOperationTool key={`${activeEditAction}-${documentKey}`} operation={activeEditAction as GeoOperation} />
             )}
-            {activeEditAction === "coordinate-editing" && <CoordinateEditingPlaceholder key="coordinate-editing" />}
           </>
         )}
 

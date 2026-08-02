@@ -42,7 +42,7 @@ describe("getToolCapability", () => {
 
 describe("getToolsByCapability", () => {
   it("groups a Studio's tools by capability", () => {
-    const pages = getToolsByCapability("pdf-tools", "pages").map((tool) => tool.slug);
+    const pages = getToolsByCapability("pdf-studio", "pages").map((tool) => tool.slug);
     expect(pages).toEqual(
       expect.arrayContaining(["merge", "split", "rotate", "extract-pages", "delete-pages", "reorder-pages"])
     );
@@ -74,24 +74,24 @@ describe("getAllCapabilities", () => {
   it("omits Studio-only capabilities with no standalone tools", () => {
     const paths = capabilities.map((capability) => capability.path);
     // Placeholder/in-app-only capabilities — deliberately no index page.
-    expect(paths).not.toContain("/pdf-tools/security");
-    expect(paths).not.toContain("/image-tools/view");
+    expect(paths).not.toContain("/pdf-studio/security");
+    expect(paths).not.toContain("/image-studio/view");
   });
 
   it("includes Geospatial Studio's Analyze, which gained standalone tools", () => {
     // Analyze was deliberately page-less while it hosted only the in-app
     // summary view; adding GeoJSON Statistics gave it a real tool to index,
     // which is exactly the condition an index page is meant to track.
-    const analyze = capabilities.find((capability) => capability.path === "/geospatial-tools/analyze");
+    const analyze = capabilities.find((capability) => capability.path === "/geospatial-studio/analyze");
     expect(analyze).toBeDefined();
     expect(analyze!.tools.length).toBeGreaterThan(0);
   });
 
   it("builds a self-consistent path, app name and label for each capability", () => {
-    const pages = capabilities.find((capability) => capability.path === "/pdf-tools/pages")!;
+    const pages = capabilities.find((capability) => capability.path === "/pdf-studio/pages")!;
     expect(pages.appName).toBe("PDF Studio");
     expect(pages.label).toBe("Pages");
-    expect(pages.categorySlug).toBe("pdf-tools");
+    expect(pages.categorySlug).toBe("pdf-studio");
     expect(pages.description.length).toBeGreaterThan(20);
   });
 
@@ -103,7 +103,7 @@ describe("getAllCapabilities", () => {
 
 describe("getCapabilitiesForStudio", () => {
   it("returns only that Application's own capabilities", () => {
-    const imageCapabilities = getCapabilitiesForStudio("image-tools");
+    const imageCapabilities = getCapabilitiesForStudio("image-studio");
     expect(imageCapabilities.map((capability) => capability.id).sort()).toEqual([
       "convert",
       "edit",
@@ -118,6 +118,6 @@ describe("getCapabilityConfig", () => {
   });
 
   it("throws for a capability with no index page, rather than rendering an empty one", () => {
-    expect(() => getCapabilityConfig("pdf-tools", "security")).toThrow(/no capability index page/i);
+    expect(() => getCapabilityConfig("pdf-studio", "security")).toThrow(/no capability index page/i);
   });
 });

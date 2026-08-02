@@ -37,15 +37,19 @@ describe("searchSite", () => {
   it('"Resize" surfaces Image Studio (via its one matching tool\'s owning app) then Resize Image', () => {
     const results = searchSite("Resize");
     expect(results).toEqual([
-      { kind: "application", slug: "image-tools", name: "Image Studio", href: "/image-tools" },
+      { kind: "application", slug: "image-studio", name: "Image Studio", href: "/image-studio" },
       expect.objectContaining({ kind: "tool", tool: expect.objectContaining({ name: "Resize Image" }) }),
     ]);
   });
 
   it("matches an Application by one of its own capability labels", () => {
-    // "Security" isn't in any tool's name/keywords, and isn't a file format —
-    // it only exists as PDF Studio's own capability label.
-    const results = searchSite("Security");
+    // "Pages" is PDF Studio's own capability label. It's deliberately a
+    // capability-only signal for the *Application* match: no Application is
+    // named "Pages" and it isn't an accepted file format, so PDF Studio can
+    // only be reached here through `getAppNavItems()`'s capability list.
+    // (This used to use "Security", which stopped being a capability when
+    // that permanently-empty placeholder tab was removed.)
+    const results = searchSite("Pages");
     expect(appNames(results)).toEqual(["PDF Studio"]);
   });
 

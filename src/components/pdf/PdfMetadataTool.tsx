@@ -1,21 +1,20 @@
 "use client";
 
-import { useState } from "react";
-import { FileDropZone } from "@/components/tools/FileDropZone";
-import { FileInfo } from "@/components/tools/FileInfo";
-import { ProcessingStatus, type ProcessingState } from "@/components/tools/ProcessingStatus";
+import { useEffect, useState } from "react";
+import { ProcessingStatus } from "@/components/tools/ProcessingStatus";
 import { ErrorPanel } from "@/components/tools/ErrorPanel";
 import { DownloadResult } from "@/components/tools/DownloadResult";
 import { readPdfMetadataFile, removePdfMetadataFile } from "@/engines/pdf";
-import { PdfSignatureWarning } from "./PdfSignatureWarning";
+import { usePdfWorkspace } from "./PdfWorkspace";
 import type { PdfMetadataInfo } from "@/engines/pdf";
 import { ProcessingError, type ProcessingErrorCode } from "@/lib/errors/ProcessingError";
 
-type ToolState =
-  | { status: Exclude<ProcessingState, "error"> }
-  | { status: "error"; message: string; code?: ProcessingErrorCode };
+interface ToolError {
+  message: string;
+  code?: ProcessingErrorCode;
+}
 
-function errorFrom(cause: unknown, fallback: string): { message: string; code?: ProcessingErrorCode } {
+function errorFrom(cause: unknown, fallback: string): ToolError {
   if (cause instanceof ProcessingError) return { message: cause.message, code: cause.code };
   return { message: fallback };
 }
@@ -31,78 +30,57 @@ const FIELD_LABELS: { key: keyof PdfMetadataInfo; label: string }[] = [
   { key: "modificationDate", label: "Modification date" },
 ];
 
+/**
+ * Presentational with respect to the file: the PDF comes from
+ * `PdfWorkspace`, so arriving here from the Pages or Convert tab needs no
+ * second drop. `PdfStudioApp` keys this component on `documentKey`, so a
+ * newly loaded file remounts it rather than needing a reset effect.
+ */
 export function PdfMetadataTool({ mode }: { mode: "view" | "remove" }) {
-  const [file, setFile] = useState<File | null>(null);
+  const { documents } = usePdfWorkspace();
+  const file = documents[0]?.file ?? null;
+
   const [metadata, setMetadata] = useState<PdfMetadataInfo | null>(null);
-  const [state, setState] = useState<ToolState>({ status: "idle" });
+  const [error, setError] = useState<ToolError | null>(null);
+  const [isRemoving, setIsRemoving] = useState(false);
   const [result, setResult] = useState<{ blob: Blob; filename: string } | null>(null);
 
-  async function handleFilesSelected(selected: File[]) {
-    const [selectedFile] = selected;
-    if (!selectedFile) return;
+  useEffect(() => {
+    if (!file) return;
+    let cancelled = false;
+    readPdfMetadataFile(file)
+      .then((info) => {
+        if (!cancelled) setMetadata(info);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setError(errorFrom(cause, "Could not read this PDF's metadata."));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [file]);
 
-    setFile(selectedFile);
-    setMetadata(null);
-    setResult(null);
-    setState({ status: "processing" });
-
-    try {
-      const info = await readPdfMetadataFile(selectedFile);
-      setMetadata(info);
-      setState({ status: "ready" });
-    } catch (cause) {
-      setState({ status: "error", ...errorFrom(cause, "Could not read this PDF's metadata.") });
-    }
-  }
-
-  function handleClear() {
-    setFile(null);
-    setMetadata(null);
-    setResult(null);
-    setState({ status: "idle" });
-  }
+  // Derived, not stored — a spinner can never get out of sync with the data.
+  const isReading = Boolean(file) && !metadata && !error;
 
   async function handleRemove() {
     if (!file) return;
-    setState({ status: "processing" });
+    setIsRemoving(true);
+    setError(null);
     try {
       const blob = await removePdfMetadataFile(file);
       setResult({ blob, filename: "cleaned.pdf" });
-      setState({ status: "done" });
     } catch (cause) {
-      setState({ status: "error", ...errorFrom(cause, "Could not remove this PDF's metadata.") });
+      setError(errorFrom(cause, "Could not remove this PDF's metadata."));
+    } finally {
+      setIsRemoving(false);
     }
   }
 
-  const isBusy = state.status === "processing";
-
   return (
     <div className="flex flex-col gap-4">
-      <FileDropZone
-        label={file ? "Drop a different PDF file" : "Drop a PDF file here"}
-        hint="Nothing is uploaded — metadata is read entirely on your device."
-        accept=".pdf,application/pdf"
-        onFilesSelected={handleFilesSelected}
-        toolSlug={mode === "view" ? "metadata-viewer" : "remove-metadata"}
-      />
-
-      {file && (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <FileInfo file={file} detectedFormat="pdf" />
-          <button
-            type="button"
-            onClick={handleClear}
-            className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:border-gray-400 hover:text-gray-900 dark:border-gray-700 dark:text-gray-300 dark:hover:text-white"
-          >
-            Clear
-          </button>
-        </div>
-      )}
-
-      {isBusy && <ProcessingStatus state="processing" />}
-      {state.status === "error" && <ErrorPanel message={state.message} code={state.code} />}
-
-      {metadata?.hasSignature && <PdfSignatureWarning />}
+      {(isReading || isRemoving) && <ProcessingStatus state="processing" />}
+      {error && <ErrorPanel message={error.message} code={error.code} />}
 
       {metadata && (
         <div className="flex flex-col gap-4">
@@ -123,10 +101,10 @@ export function PdfMetadataTool({ mode }: { mode: "view" | "remove" }) {
             <button
               type="button"
               onClick={handleRemove}
-              disabled={isBusy}
+              disabled={isRemoving}
               className="inline-flex w-fit items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              Remove metadata & download
+              Remove metadata &amp; download
             </button>
           )}
         </div>

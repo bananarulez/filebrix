@@ -1,22 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { FileDropZone } from "@/components/tools/FileDropZone";
-import { FileInfo } from "@/components/tools/FileInfo";
-import { ProcessingStatus, type ProcessingState } from "@/components/tools/ProcessingStatus";
+import { useState } from "react";
+import { ProcessingStatus } from "@/components/tools/ProcessingStatus";
 import { ProcessingProgress } from "@/components/tools/ProcessingProgress";
 import { ErrorPanel } from "@/components/tools/ErrorPanel";
 import { DownloadResult } from "@/components/tools/DownloadResult";
 import { PdfThumbnail } from "./PdfThumbnail";
-import { inspectPdfFile, buildPdfFromSelectionFiles } from "@/engines/pdf";
-import { PdfSignatureWarning } from "./PdfSignatureWarning";
-import type { PdfPageInfo } from "@/engines/pdf";
-import { openPdfRenderSession, type PdfRenderSession } from "@/engines/pdf/render/session";
+import { buildPdfFromSelectionFiles } from "@/engines/pdf";
+import { usePdfWorkspace } from "./PdfWorkspace";
 import type { Progress } from "@/engines/shared/types";
 import { ProcessingError, type ProcessingErrorCode } from "@/lib/errors/ProcessingError";
 
 type ToolState =
-  | { status: Exclude<ProcessingState, "error"> }
+  | { status: "idle" | "processing" | "done" }
   | { status: "error"; message: string; code?: ProcessingErrorCode };
 
 function errorFrom(cause: unknown, fallback: string): { message: string; code?: ProcessingErrorCode } {
@@ -39,82 +35,21 @@ function computeRanges(pageCount: number, splitAfter: ReadonlySet<number>): numb
   return ranges;
 }
 
+/**
+ * Presentational with respect to the file: the document comes from
+ * `PdfWorkspace`, and `PdfStudioApp` folds `documentKey` into this
+ * component's React `key`, so a newly loaded PDF remounts it with an empty
+ * marker set rather than needing a reset effect.
+ */
 export function PdfSplitTool() {
-  const [file, setFile] = useState<File | null>(null);
-  const [pages, setPages] = useState<PdfPageInfo[]>([]);
+  const { documents, currentLoadToken } = usePdfWorkspace();
   const [splitAfter, setSplitAfter] = useState<Set<number>>(new Set());
   const [state, setState] = useState<ToolState>({ status: "idle" });
   const [progress, setProgress] = useState<Progress | null>(null);
   const [result, setResult] = useState<{ blob: Blob; filename: string } | null>(null);
-  // Stale-request guard — see the equivalent in PdfPageWorkspaceTool. Drop a
-  // second PDF while the first is still opening and the older run's pages,
-  // signature flag and render session are discarded rather than racing the
-  // newer one's into state.
-  const requestRef = useRef(0);
 
-  // `session` (state) is read during render for thumbnails; `sessionRef`
-  // mirrors it only so the unmount-cleanup effect can reach the latest
-  // session without a stale closure — never read during render itself.
-  const [session, setSession] = useState<PdfRenderSession | null>(null);
-  const [hasSignature, setHasSignature] = useState(false);
-  const sessionRef = useRef<PdfRenderSession | null>(null);
-
-  async function closeSession() {
-    const current = sessionRef.current;
-    sessionRef.current = null;
-    setSession(null);
-    if (current) await current.close().catch(() => {});
-  }
-
-  useEffect(() => {
-    return () => {
-      void closeSession();
-    };
-  }, []);
-
-  async function handleFilesSelected(selected: File[]) {
-    const [selectedFile] = selected;
-    if (!selectedFile) return;
-
-    const token = ++requestRef.current;
-
-    await closeSession();
-    setResult(null);
-    setProgress(null);
-    setSplitAfter(new Set());
-    setState({ status: "opening-file" });
-
-    try {
-      const info = await inspectPdfFile(selectedFile);
-      if (requestRef.current !== token) return;
-      const newSession = await openPdfRenderSession(selectedFile);
-      if (requestRef.current !== token) {
-        await newSession.close().catch(() => {});
-        return;
-      }
-      sessionRef.current = newSession;
-      setSession(newSession);
-      setHasSignature(info.hasSignature);
-      setFile(selectedFile);
-      setPages(info.pages);
-      setState({ status: "ready" });
-    } catch (cause) {
-      if (requestRef.current !== token) return;
-      setState({ status: "error", ...errorFrom(cause, "Could not open this PDF.") });
-    }
-  }
-
-  async function handleClear() {
-    requestRef.current += 1;
-    await closeSession();
-    setFile(null);
-    setPages([]);
-    setSplitAfter(new Set());
-    setResult(null);
-    setProgress(null);
-    setHasSignature(false);
-    setState({ status: "idle" });
-  }
+  const doc = documents[0] ?? null;
+  const pages = doc?.info.pages ?? [];
 
   function toggleMarker(pageIndex: number) {
     setSplitAfter((current) => {
@@ -126,11 +61,12 @@ export function PdfSplitTool() {
   }
 
   async function handleSubmit() {
-    if (!file) return;
+    if (!doc) return;
+    const file = doc.file;
     const ranges = computeRanges(pages.length, splitAfter);
 
-    // Read, not bumped: a split is superseded by the next drop or clear.
-    const token = requestRef.current;
+    // Read, not bumped: a split is superseded by the next load or clear.
+    const token = currentLoadToken();
     setState({ status: "processing" });
     setProgress({ percent: 0, message: "Preparing…" });
 
@@ -138,7 +74,7 @@ export function PdfSplitTool() {
     // each part's own progress is folded into its slice of the overall bar
     // — a 40-part split reads as one continuous run rather than 40 restarts.
     function report(partIndex: number, inner: Progress) {
-      if (requestRef.current !== token) return;
+      if (currentLoadToken() !== token) return;
       const fraction = (partIndex + (inner.percent ?? 0) / 100) / ranges.length;
       const detail = inner.message ?? "Working…";
       setProgress({
@@ -154,7 +90,7 @@ export function PdfSplitTool() {
           ranges[0]!.map((pageIndex) => ({ sourceIndex: 0, pageIndex })),
           (update) => report(0, update)
         );
-        if (requestRef.current !== token) return;
+        if (currentLoadToken() !== token) return;
         setResult({ blob, filename: "split-part-1.pdf" });
       } else {
         const { default: JSZip } = await import("jszip");
@@ -165,56 +101,33 @@ export function PdfSplitTool() {
             range.map((pageIndex) => ({ sourceIndex: 0, pageIndex })),
             (update) => report(i, update)
           );
-          if (requestRef.current !== token) return;
+          if (currentLoadToken() !== token) return;
           zip.file(`split-part-${i + 1}.pdf`, blob);
         }
         setProgress({ percent: 100, message: "Packaging parts…" });
         const zipBlob = await zip.generateAsync({ type: "blob" });
-        if (requestRef.current !== token) return;
+        if (currentLoadToken() !== token) return;
         setResult({ blob: zipBlob, filename: "split-pages.zip" });
       }
       setState({ status: "done" });
     } catch (cause) {
-      if (requestRef.current !== token) return;
+      if (currentLoadToken() !== token) return;
       setState({ status: "error", ...errorFrom(cause, "Could not split this PDF.") });
     } finally {
-      if (requestRef.current === token) setProgress(null);
+      if (currentLoadToken() === token) setProgress(null);
     }
   }
 
-  const isBusy = state.status === "opening-file" || state.status === "processing";
+  const isBusy = state.status === "processing";
   const ranges = computeRanges(pages.length, splitAfter);
 
   return (
     <div className="flex flex-col gap-4">
-      <FileDropZone
-        label={file ? "Drop a different PDF file" : "Drop a PDF file here"}
-        hint="Nothing is uploaded — every page is read and rebuilt entirely on your device."
-        accept=".pdf,application/pdf"
-        onFilesSelected={handleFilesSelected}
-        toolSlug="split"
-      />
-
-      {file && (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <FileInfo file={file} detectedFormat="pdf" />
-          <button
-            type="button"
-            onClick={handleClear}
-            className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-600 hover:border-gray-400 hover:text-gray-900 dark:border-gray-700 dark:text-gray-300 dark:hover:text-white"
-          >
-            Clear
-          </button>
-        </div>
-      )}
-
-      {isBusy && <ProcessingStatus state={state.status} />}
+      {isBusy && <ProcessingStatus state="processing" />}
       {progress && <ProcessingProgress percent={progress.percent} message={progress.message} />}
       {state.status === "error" && <ErrorPanel message={state.message} code={state.code} />}
 
-      {hasSignature && <PdfSignatureWarning />}
-
-      {pages.length > 0 && session && (
+      {doc && pages.length > 0 && (
         <>
           <p className="text-sm text-gray-500">
             Click the marker between two pages to split there. Currently {ranges.length}{" "}
@@ -229,7 +142,7 @@ export function PdfSplitTool() {
                   height={page.height}
                   rotation={page.rotation}
                   cacheKey={`page-${page.index}`}
-                  render={() => session.renderThumbnail(page.index, 140)}
+                  render={() => doc.session.renderThumbnail(page.index, 140)}
                 />
                 {index < pages.length - 1 && (
                   <button

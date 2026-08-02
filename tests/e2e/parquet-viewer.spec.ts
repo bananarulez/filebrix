@@ -18,7 +18,7 @@ async function openParquetViewer(page: import("@playwright/test").Page) {
 test("the page's reading-width column stays the same width before and after a file loads — it never widens, to keep room for ads in the side margins", async ({
   page,
 }) => {
-  await page.goto("/pdf-tools");
+  await page.goto("/pdf-studio");
   const pdfWidth = await page.evaluate(() => {
     let el: Element = document.querySelector("h1")!;
     while (el.parentElement && el.parentElement.tagName !== "MAIN") el = el.parentElement;

@@ -108,6 +108,33 @@ export async function processImage(source: Blob, options: ImageProcessOptions): 
       finalCanvas = adjusted;
     }
 
+    // Pass 4: text watermark, drawn over everything else so it isn't
+    // rotated, cropped or colour-adjusted along with the image. `fillText`
+    // and `measureText` inside a real Worker's OffscreenCanvas were
+    // confirmed empirically (a throwaway worker rendering text at 50% alpha
+    // and counting inked pixels) before this was built on them, same
+    // discipline as the `filter` pass above.
+    if (options.watermark && options.watermark.text.trim() !== "") {
+      const { text, position, opacity, fontScale, color } = options.watermark;
+      const ctx = finalCanvas.getContext("2d");
+      if (ctx) {
+        const margin = Math.round(Math.min(finalCanvas.width, finalCanvas.height) * 0.04);
+        const fontSize = Math.max(8, Math.round(Math.min(finalCanvas.width, finalCanvas.height) * fontScale));
+        ctx.save();
+        ctx.globalAlpha = Math.min(Math.max(opacity, 0), 1);
+        ctx.fillStyle = color;
+        ctx.font = `bold ${fontSize}px sans-serif`;
+        ctx.textBaseline = position.startsWith("top") ? "top" : position.startsWith("bottom") ? "bottom" : "middle";
+        ctx.textAlign = position.endsWith("right") ? "right" : position.endsWith("left") ? "left" : "center";
+        const x =
+          ctx.textAlign === "left" ? margin : ctx.textAlign === "right" ? finalCanvas.width - margin : finalCanvas.width / 2;
+        const y =
+          ctx.textBaseline === "top" ? margin : ctx.textBaseline === "bottom" ? finalCanvas.height - margin : finalCanvas.height / 2;
+        ctx.fillText(text, x, y);
+        ctx.restore();
+      }
+    }
+
     // Background fill happens last, composited *under* the final image via
     // globalCompositeOperation, so it only fills what the (possibly
     // transparent) source left uncovered — needed when converting a

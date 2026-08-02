@@ -11,6 +11,7 @@ import { Breadcrumbs } from "@/components/seo/Breadcrumbs";
 import { StructuredData } from "@/components/seo/StructuredData";
 import { RelatedApplications } from "@/components/seo/RelatedApplications";
 import { CategoryToolFilter } from "@/components/category/CategoryToolFilter";
+import { PageContainer, ProseContainer } from "@/components/layout/PageContainer";
 
 const PARENT_CATEGORY = CATEGORIES.find((c) => c.slug === "developer-tools")!;
 
@@ -39,7 +40,7 @@ export function DevCategoryPageContent({ slug }: { slug: DevCategorySlug }) {
   const tools = getToolsByDevCategory(slug);
 
   return (
-    <div className="mx-auto flex w-full max-w-[54rem] flex-col gap-8 px-4 py-16">
+    <PageContainer className="gap-8 py-16">
       {/* Same CollectionPage/ItemList markup the Studio capability index
           pages emit — Developer Toolkit's sub-category pages are the same
           kind of page (an index enumerating tools), so they get the same
@@ -63,7 +64,9 @@ export function DevCategoryPageContent({ slug }: { slug: DevCategorySlug }) {
         />
         <header className="flex flex-col gap-2">
           <h1 className="text-3xl font-semibold">{category.name}</h1>
-          <p className="text-gray-600 dark:text-gray-300">{category.description}</p>
+          <ProseContainer>
+            <p className="text-gray-600 dark:text-gray-300">{category.description}</p>
+          </ProseContainer>
         </header>
       </div>
 
@@ -83,6 +86,6 @@ export function DevCategoryPageContent({ slug }: { slug: DevCategorySlug }) {
       <AdSlot placement="category-page" />
 
       <RelatedApplications excludeSlug="developer-tools" />
-    </div>
+    </PageContainer>
   );
 }

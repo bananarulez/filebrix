@@ -23,7 +23,7 @@ test.describe("Global site search", () => {
     await expect(resultsList.getByRole("link", { name: "Merge PDF" })).toBeVisible();
 
     await resultsList.getByRole("link", { name: "PDF Studio" }).click();
-    await expect(page).toHaveURL(/\/pdf-tools$/);
+    await expect(page).toHaveURL(/\/pdf-studio$/);
   });
 
   test('"CSV" surfaces Data Studio via its accepted file format, not just by tool name match', async ({

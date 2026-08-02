@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { FileDropZone } from "@/components/tools/FileDropZone";
 import { ImageBatchList, batchKey } from "./ImageBatchList";
+import { useImageWorkspace } from "./ImageWorkspace";
 import { processImageFile } from "@/engines/image";
 import type { FlipAxis, RasterFormat } from "@/engines/image";
 import { detectFileType } from "@/lib/detect/detectFile";
@@ -86,7 +86,12 @@ async function processJobFile(mode: TransformMode, job: Job, file: File): Promis
  * to the whole batch; per-file individual settings would need processing
  * one file at a time, which the tool already supports by simply dropping
  * one file. Processing only starts on an explicit action click, with the
- * settings snapshotted into a `Job` — same reasoning as ImageConvertTool. */
+ * settings snapshotted into a `Job` — same reasoning as ImageConvertTool.
+ *
+ * Presentational with respect to the files: they come from
+ * `ImageWorkspace`, so switching Edit actions (or tabs) keeps them loaded.
+ * `ImageStudioApp` keys this component on `documentKey`, so a new drop
+ * remounts it with no stale job. */
 interface ImageTransformToolProps {
   mode: TransformMode;
   /** Fired with the processed result once a single-file job completes —
@@ -96,7 +101,7 @@ interface ImageTransformToolProps {
 }
 
 export function ImageTransformTool({ mode, onResult }: ImageTransformToolProps) {
-  const [files, setFiles] = useState<File[]>([]);
+  const { files } = useImageWorkspace();
   const [width, setWidth] = useState(800);
   const [height, setHeight] = useState<number | undefined>(undefined);
   const [lockAspectRatio, setLockAspectRatio] = useState(true);
@@ -121,18 +126,6 @@ export function ImageTransformTool({ mode, onResult }: ImageTransformToolProps) 
 
   return (
     <div className="flex flex-col gap-4">
-      <FileDropZone
-        label={files.length > 0 ? "Drop more images" : "Drop PNG, JPEG or WebP images here"}
-        hint="Nothing is uploaded — every image is processed entirely on your device."
-        accept="image/png,image/jpeg,image/webp"
-        multiple
-        onFilesSelected={(selected) => {
-          setFiles(selected);
-          setJob(null);
-        }}
-        toolSlug={`${mode}-image`}
-      />
-
       {files.length > 0 && (
         <div className="flex flex-wrap items-center gap-6 text-sm">
           {mode === "resize" && (
@@ -266,16 +259,6 @@ export function ImageTransformTool({ mode, onResult }: ImageTransformToolProps) 
             className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700"
           >
             {actionLabel[mode]}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setFiles([]);
-              setJob(null);
-            }}
-            className="rounded-md border border-gray-200 px-3 py-1.5 text-gray-600 hover:border-gray-400 hover:text-gray-900 dark:border-gray-700 dark:text-gray-300 dark:hover:text-white"
-          >
-            Clear
           </button>
         </div>
       )}

@@ -5,7 +5,7 @@ import { Breadcrumbs } from "@/components/seo/Breadcrumbs";
 describe("Breadcrumbs", () => {
   const items = [
     { name: "Home", href: "/" },
-    { name: "PDF Studio", href: "/pdf-tools" },
+    { name: "PDF Studio", href: "/pdf-studio" },
     { name: "Merge PDF", href: "/pdf/merge" },
   ];
 
@@ -15,7 +15,7 @@ describe("Breadcrumbs", () => {
     const home = screen.getByRole("link", { name: "Home" });
     expect(home).toHaveAttribute("href", "/");
     const category = screen.getByRole("link", { name: "PDF Studio" });
-    expect(category).toHaveAttribute("href", "/pdf-tools");
+    expect(category).toHaveAttribute("href", "/pdf-studio");
 
     // The current page is shown as plain, non-linked text.
     expect(screen.queryByRole("link", { name: "Merge PDF" })).not.toBeInTheDocument();

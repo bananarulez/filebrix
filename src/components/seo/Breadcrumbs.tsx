@@ -5,7 +5,7 @@ import { SITE_URL } from "@/lib/seo/metadata";
 
 export interface BreadcrumbItem {
   name: string;
-  /** Site-relative path, e.g. "/" or "/pdf-tools". */
+  /** Site-relative path, e.g. "/" or "/pdf-studio". */
   href: string;
 }
 

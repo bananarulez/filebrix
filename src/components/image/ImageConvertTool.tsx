@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { FileDropZone } from "@/components/tools/FileDropZone";
 import { ImageBatchList, batchKey } from "./ImageBatchList";
-import { processImageFile, EXTENSION_BY_FORMAT, MIME_BY_FORMAT, formatIsLossy, formatSupportsTransparency } from "@/engines/image";
+import { useImageWorkspace } from "./ImageWorkspace";
+import { processImageFile, EXTENSION_BY_FORMAT, formatIsLossy, formatSupportsTransparency } from "@/engines/image";
 import type { RasterFormat } from "@/engines/image";
 import { deriveOutputFilename } from "@/lib/format/deriveOutputFilename";
 
@@ -26,20 +26,20 @@ const DEFAULT_QUALITY = 0.85;
  * on an explicit "Convert" click (not live on every slider drag) — options
  * are snapshotted into a `Job` at that point, which is what `ImageBatchList`
  * is keyed by, so adjusting quality afterward doesn't silently reprocess a
- * batch that already finished. */
+ * batch that already finished.
+ *
+ * Presentational with respect to the files: they come from
+ * `ImageWorkspace`, which also gates this action on the loaded images
+ * actually being `sourceFormat` (see `actionFormats.ts`) — the check each
+ * tool's own drop-zone `accept` attribute used to make. */
 export function ImageConvertTool({ sourceFormat, targetFormat }: ImageConvertToolProps) {
-  const [files, setFiles] = useState<File[]>([]);
+  const { files } = useImageWorkspace();
   const [quality, setQuality] = useState(DEFAULT_QUALITY);
   const [backgroundColor, setBackgroundColor] = useState("#ffffff");
   const [job, setJob] = useState<Job | null>(null);
 
   const needsBackground = formatSupportsTransparency(sourceFormat) && !formatSupportsTransparency(targetFormat);
   const showQuality = formatIsLossy(targetFormat);
-
-  function handleClear() {
-    setFiles([]);
-    setJob(null);
-  }
 
   function handleConvert() {
     setJob({
@@ -53,18 +53,6 @@ export function ImageConvertTool({ sourceFormat, targetFormat }: ImageConvertToo
 
   return (
     <div className="flex flex-col gap-4">
-      <FileDropZone
-        label={files.length > 0 ? "Drop more images" : `Drop ${sourceFormat.toUpperCase()} images here`}
-        hint="Nothing is uploaded — every image is converted entirely on your device."
-        accept={MIME_BY_FORMAT[sourceFormat]}
-        multiple
-        onFilesSelected={(selected) => {
-          setFiles(selected);
-          setJob(null);
-        }}
-        toolSlug={`${sourceFormat}-to-${targetFormat}`}
-      />
-
       {files.length > 0 && (
         <div className="flex flex-wrap items-center gap-6 text-sm">
           {needsBackground && (
@@ -98,13 +86,6 @@ export function ImageConvertTool({ sourceFormat, targetFormat }: ImageConvertToo
             className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700"
           >
             Convert
-          </button>
-          <button
-            type="button"
-            onClick={handleClear}
-            className="rounded-md border border-gray-200 px-3 py-1.5 text-gray-600 hover:border-gray-400 hover:text-gray-900 dark:border-gray-700 dark:text-gray-300 dark:hover:text-white"
-          >
-            Clear
           </button>
         </div>
       )}

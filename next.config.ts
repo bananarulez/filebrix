@@ -108,6 +108,28 @@ const nextConfig: NextConfig = {
         destination: "/data-studio",
         permanent: true,
       },
+      /*
+       * The three "-tools" Application slugs were renamed to "-studio" so
+       * every Studio's URL matches its display name, the way /data-studio
+       * always did. Each pair below covers the Application page itself and
+       * every capability index page under it (`/pdf-tools/pages` ->
+       * `/pdf-studio/pages`); `:path*` is written as a second rule rather
+       * than relied on to also match the bare path, so the Application page
+       * can't silently stop redirecting if that matcher's zero-segment
+       * behaviour ever changes. Individual tool URLs (/pdf/merge,
+       * /convert/png-to-jpg, /geo/geojson-viewer, ...) never lived under
+       * these prefixes and are unaffected.
+       */
+      { source: "/pdf-tools", destination: "/pdf-studio", permanent: true },
+      { source: "/pdf-tools/:path*", destination: "/pdf-studio/:path*", permanent: true },
+      { source: "/image-tools", destination: "/image-studio", permanent: true },
+      { source: "/image-tools/:path*", destination: "/image-studio/:path*", permanent: true },
+      { source: "/geospatial-tools", destination: "/geospatial-studio", permanent: true },
+      {
+        source: "/geospatial-tools/:path*",
+        destination: "/geospatial-studio/:path*",
+        permanent: true,
+      },
     ];
   },
 };

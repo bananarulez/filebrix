@@ -30,6 +30,13 @@ export function processImageFile(file: File, options: ImageProcessOptions): Prom
   return call((api) => api.processImageFile(file, options));
 }
 
-export type { ImageDimensions, ImageProcessOptions, RasterFormat, FlipAxis } from "./types";
+export type {
+  ImageDimensions,
+  ImageProcessOptions,
+  RasterFormat,
+  FlipAxis,
+  WatermarkOptions,
+  WatermarkPosition,
+} from "./types";
 export { computeResizeDimensions, computeRotatedDimensions } from "./transform/dimensions";
 export { MIME_BY_FORMAT, EXTENSION_BY_FORMAT, formatSupportsTransparency, formatIsLossy } from "./transform/mime";

@@ -240,56 +240,47 @@ test.describe("Network privacy", () => {
   });
 });
 
-test.describe("PDF Studio hub (/pdf-tools)", () => {
+test.describe("PDF Studio hub (/pdf-studio)", () => {
   test("Pages tab's action picker switches between the 6 page operations, each rendering its own unchanged UI", async ({
     page,
   }) => {
-    await page.goto("/pdf-tools");
+    await page.goto("/pdf-studio");
     await page.getByRole("tab", { name: "Pages", exact: true }).click();
 
-    await page.getByRole("tab", { name: "Split", exact: true }).click();
+    await page.getByRole("radio", { name: "Split", exact: true }).click();
     await page.locator('input[type="file"]').first().setInputFiles(fixture("multi-page.pdf"));
     await expect(page.getByText(/part/i)).toBeVisible({ timeout: 20_000 });
 
-    await page.getByRole("tab", { name: "Rotate", exact: true }).click();
+    await page.getByRole("radio", { name: "Rotate", exact: true }).click();
     await page.locator('input[type="file"]').first().setInputFiles(fixture("multi-page.pdf"));
     await expect(page.getByText(/^Page 1$/).first()).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole("button", { name: "Apply rotation & download" })).toBeVisible();
   });
 
   test("Convert and Metadata tabs each show a working action picker", async ({ page }) => {
-    await page.goto("/pdf-tools");
+    await page.goto("/pdf-studio");
 
     await page.getByRole("tab", { name: "Convert", exact: true }).click();
-    await page.getByRole("tab", { name: "PDF to Text", exact: true }).click();
+    await page.getByRole("radio", { name: "PDF to Text", exact: true }).click();
     await page.locator('input[type="file"]').first().setInputFiles(fixture("multi-page.pdf"));
     await expect(page.getByRole("button", { name: /copy/i })).toBeVisible({ timeout: 20_000 });
 
     await page.getByRole("tab", { name: "Metadata", exact: true }).click();
-    await page.getByRole("tab", { name: "Remove", exact: true }).click();
+    await page.getByRole("radio", { name: "Remove", exact: true }).click();
     await page.locator('input[type="file"]').first().setInputFiles(fixture("multi-page.pdf"));
     await expect(page.getByRole("button", { name: /remove metadata/i })).toBeVisible({ timeout: 20_000 });
   });
 
-  test("Security tab shows a placeholder — no file drop, no engine call, no off-origin network activity", async ({
+  test("the removed Security placeholder is gone — no tab, and no dead-end tab bar entry", async ({
     page,
-    baseURL,
   }) => {
-    const externalRequests: string[] = [];
-    const baseOrigin = baseURL ? new URL(baseURL).origin : null;
-    page.on("request", (request) => {
-      const url = new URL(request.url());
-      if (baseOrigin && url.origin !== baseOrigin) externalRequests.push(request.url());
-    });
-
-    await page.goto("/pdf-tools");
-    await page.getByRole("tab", { name: "Security", exact: true }).click();
-
-    await expect(page.getByText(/isn.t available yet/i)).toBeVisible();
-    await expect(page.locator('input[type="file"]')).toHaveCount(0);
-
-    await page.waitForTimeout(500);
-    expect(externalRequests).toEqual([]);
+    // pdf-lib can detect encryption but cannot write it, so the tab could
+    // never ship. A permanently-empty tab is a cost on every visit, so it was
+    // removed rather than left showing "not available yet" forever.
+    await page.goto("/pdf-studio");
+    await expect(page.getByRole("tab", { name: "Security", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("tab")).toHaveCount(4);
+    await expect(page.getByText(/isn.t available yet/i)).toHaveCount(0);
   });
 
   test("a locked tool page (/pdf/rotate) hides the Pages action picker but keeps the top-level tabs switchable", async ({
@@ -299,7 +290,7 @@ test.describe("PDF Studio hub (/pdf-tools)", () => {
     await expect(page.locator('[aria-label="Action"]')).toHaveCount(0);
 
     await page.getByRole("tab", { name: "Convert", exact: true }).click();
-    await expect(page.getByRole("tab", { name: "Images to PDF", exact: true })).toBeVisible();
+    await expect(page.getByRole("radio", { name: "Images to PDF", exact: true })).toBeVisible();
   });
 });
 
@@ -381,5 +372,107 @@ test.describe("Remove Metadata — XMP", () => {
     expect(output).not.toContain("XMPSECRETTITLE");
     expect(output).not.toContain("XMPSECRETAUTHOR");
     expect(output).not.toContain("x:xmpmeta");
+  });
+});
+
+/**
+ * The whole point of a Studio owning the loaded file (`PdfWorkspace`) rather
+ * than each tool owning its own: a PDF dropped once stays loaded while the
+ * user moves around. Before this, switching Merge -> Split — or Pages ->
+ * Metadata — silently discarded it, and the user had to find and drop the
+ * same file again for every operation.
+ */
+test.describe("PDF Studio keeps the loaded file across tabs", () => {
+  test("a PDF dropped on Merge is still loaded after switching to Split and to Metadata", async ({
+    page,
+  }) => {
+    await page.goto("/pdf-studio");
+    await page.getByRole("tab", { name: "Pages", exact: true }).click();
+    await page.getByRole("radio", { name: "Merge", exact: true }).click();
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("multi-page.pdf"));
+    await expect(page.getByText(/^Page 1$/).first()).toBeVisible({ timeout: 20_000 });
+
+    // Another action in the same tab...
+    await page.getByRole("radio", { name: "Split", exact: true }).click();
+    await expect(page.getByText("multi-page.pdf")).toBeVisible();
+    // ...reaches its own UI with no second drop: 5 pages, so 1 part to start.
+    await expect(page.getByText(/1 part/i)).toBeVisible({ timeout: 20_000 });
+
+    // ...and so does another tab entirely.
+    await page.getByRole("tab", { name: "Metadata", exact: true }).click();
+    await expect(page.getByText("multi-page.pdf")).toBeVisible();
+    // A field label from the metadata table, i.e. the tab actually read the
+    // carried-over file rather than just showing its name.
+    await expect(page.getByText("Producer", { exact: true })).toBeVisible({ timeout: 20_000 });
+
+    // "Clear" is the only thing that unloads it.
+    await page.getByRole("button", { name: "Clear", exact: true }).click();
+    await expect(page.getByText("multi-page.pdf")).toHaveCount(0);
+  });
+
+  test("the View tab can search the document's text and jump to a matching page", async ({ page }) => {
+    await page.goto("/pdf-studio");
+    await page.getByRole("tab", { name: "View", exact: true }).click();
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("multi-page.pdf"));
+    await expect(page.getByRole("img", { name: /^Page 1 of 5$/ })).toBeVisible({ timeout: 20_000 });
+
+    // multi-page.pdf's pages read "Page N of 5", so "Page 4" appears on
+    // exactly one page — a real assertion about extracted text, not a
+    // "something rendered" check.
+    await page.getByLabel("Search this PDF").fill("Page 4");
+    await expect(page.getByText(/1 match on 1 page/i)).toBeVisible({ timeout: 20_000 });
+
+    await page.getByRole("button", { name: "Next match", exact: true }).click();
+    await expect(page.getByRole("img", { name: /^Page 4 of 5$/ })).toBeVisible({ timeout: 20_000 });
+
+    // A query that isn't there says so, rather than silently doing nothing.
+    await page.getByLabel("Search this PDF").fill("definitely-not-in-this-document");
+    await expect(page.getByText("No matches")).toBeVisible();
+  });
+
+  test("the View tab reads a loaded PDF page by page, with no file of its own to drop", async ({
+    page,
+  }) => {
+    await page.goto("/pdf-studio");
+    await page.getByRole("tab", { name: "View", exact: true }).click();
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("multi-page.pdf"));
+
+    // A real rendered page, not a placeholder — pdf.js hands back a data URL.
+    const pageImage = page.getByRole("img", { name: /^Page 1 of 5$/ });
+    await expect(pageImage).toBeVisible({ timeout: 20_000 });
+    expect(await pageImage.getAttribute("src")).toMatch(/^data:image\/png;base64,/);
+
+    await page.getByRole("button", { name: "Next page", exact: true }).click();
+    await expect(page.getByRole("img", { name: /^Page 2 of 5$/ })).toBeVisible({ timeout: 20_000 });
+
+    // And the same document is still there for the operational tabs.
+    await page.getByRole("tab", { name: "Pages", exact: true }).click();
+    await expect(page.getByText("multi-page.pdf")).toBeVisible();
+  });
+});
+
+test.describe("Studio URL renames", () => {
+  test("the old /pdf-tools URLs permanently redirect to /pdf-studio", async ({ page }) => {
+    const response = await page.goto("/pdf-tools");
+    expect(response?.status()).toBe(200);
+    await expect(page).toHaveURL(/\/pdf-studio$/);
+
+    // Capability index pages under the old prefix move with it.
+    await page.goto("/pdf-tools/pages");
+    await expect(page).toHaveURL(/\/pdf-studio\/pages$/);
+  });
+
+  test("the old /image-tools and /geospatial-tools URLs redirect too", async ({ page }) => {
+    await page.goto("/image-tools");
+    await expect(page).toHaveURL(/\/image-studio$/);
+
+    await page.goto("/image-tools/convert");
+    await expect(page).toHaveURL(/\/image-studio\/convert$/);
+
+    await page.goto("/geospatial-tools");
+    await expect(page).toHaveURL(/\/geospatial-studio$/);
+
+    await page.goto("/geospatial-tools/view");
+    await expect(page).toHaveURL(/\/geospatial-studio\/view$/);
   });
 });

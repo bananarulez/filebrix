@@ -10,6 +10,7 @@ import { Breadcrumbs } from "@/components/seo/Breadcrumbs";
 import { StructuredData } from "@/components/seo/StructuredData";
 import { buildApplicationJsonLd, buildFaqJsonLd } from "@/lib/seo/structuredData";
 import { SITE_URL } from "@/lib/seo/metadata";
+import { PageContainer, ProseContainer } from "@/components/layout/PageContainer";
 
 interface StudioLayoutProps {
   studio: StudioConfig;
@@ -30,8 +31,8 @@ interface StudioLayoutProps {
 }
 
 /**
- * The one generic shell every Studio page (`/data-studio`, `/pdf-tools`,
- * `/image-tools`, `/geospatial-tools`) renders into — mirrors
+ * The one generic shell every Studio page (`/data-studio`, `/pdf-studio`,
+ * `/image-studio`, `/geospatial-studio`) renders into — mirrors
  * `ToolPageLayout`'s role for individual tool pages, one level up, at the
  * Application (product-layer) level. Each Studio provides only
  * configuration (`registry/studios.ts#getStudioConfig`) — this component
@@ -48,7 +49,7 @@ export function StudioLayout({ studio, children, toolList }: StudioLayoutProps) 
   const url = `${SITE_URL}/${studio.categorySlug}`;
 
   return (
-    <div className="mx-auto flex w-full max-w-[54rem] flex-col gap-8 px-4 py-16">
+    <PageContainer className="gap-8 py-16">
       <StructuredData data={buildApplicationJsonLd(studio.title, studio.description, url)} />
       {studio.faq.length > 0 && <StructuredData data={buildFaqJsonLd(studio.faq)} />}
 
@@ -57,7 +58,10 @@ export function StudioLayout({ studio, children, toolList }: StudioLayoutProps) 
         <header className="flex flex-col gap-3">
           <LocalProcessingBadge />
           <h1 className="text-3xl font-semibold">{studio.title}</h1>
-          <p className="text-gray-600 dark:text-gray-300">{studio.description}</p>
+          {/* Prose measure — the Studio app below is what should use the room. */}
+          <ProseContainer>
+            <p className="text-gray-600 dark:text-gray-300">{studio.description}</p>
+          </ProseContainer>
         </header>
       </div>
 
@@ -70,6 +74,6 @@ export function StudioLayout({ studio, children, toolList }: StudioLayoutProps) 
       <FAQ items={studio.faq} />
 
       <RelatedTools tools={relatedActions} />
-    </div>
+    </PageContainer>
   );
 }

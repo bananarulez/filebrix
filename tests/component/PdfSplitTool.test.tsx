@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { screen, waitFor, fireEvent } from "@testing-library/react";
 import { PdfSplitTool } from "@/components/pdf/PdfSplitTool";
+import { renderWithPdfWorkspace } from "./pdfWorkspaceHarness";
 import { inspectPdfFile, buildPdfFromSelectionFiles } from "@/engines/pdf";
 import { openPdfRenderSession } from "@/engines/pdf/render/session";
 
@@ -77,7 +78,7 @@ describe("PdfSplitTool", () => {
     mockedOpenSession.mockResolvedValue(makeSession());
     mockedBuild.mockResolvedValue(new Blob(["pdf"], { type: "application/pdf" }));
 
-    render(<PdfSplitTool />);
+    renderWithPdfWorkspace(<PdfSplitTool />);
     selectFile(makeFile("doc.pdf"));
 
     await waitFor(() => expect(screen.getByText(/1 part/i)).toBeInTheDocument());
@@ -94,7 +95,7 @@ describe("PdfSplitTool", () => {
     mockedOpenSession.mockResolvedValue(makeSession());
     mockedBuild.mockResolvedValue(new Blob(["pdf"], { type: "application/pdf" }));
 
-    render(<PdfSplitTool />);
+    renderWithPdfWorkspace(<PdfSplitTool />);
     selectFile(makeFile("doc.pdf"));
     await waitFor(() => expect(screen.getByText(/1 part/i)).toBeInTheDocument());
 
@@ -122,7 +123,7 @@ describe("PdfSplitTool", () => {
         return secondPart.promise;
       });
 
-    render(<PdfSplitTool />);
+    renderWithPdfWorkspace(<PdfSplitTool />);
     selectFile(makeFile("doc.pdf"));
     await waitFor(() => expect(screen.getByText(/1 part/i)).toBeInTheDocument());
 
@@ -150,7 +151,7 @@ describe("PdfSplitTool", () => {
     mockedInspect.mockResolvedValueOnce(makeInfo(6)).mockResolvedValueOnce(makeInfo(2));
     mockedOpenSession.mockReturnValueOnce(stalled.promise).mockResolvedValueOnce(secondSession);
 
-    render(<PdfSplitTool />);
+    renderWithPdfWorkspace(<PdfSplitTool />);
     selectFile(makeFile("slow.pdf"));
     await waitFor(() => expect(mockedOpenSession).toHaveBeenCalledTimes(1));
 

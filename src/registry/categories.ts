@@ -16,27 +16,29 @@ export const CATEGORIES: CategoryDefinition[] = [
       "View, edit, analyze and convert CSV, Excel, JSON, XML, YAML and Parquet files locally in your browser.",
   },
   {
-    // Slug stays "pdf-tools" (preserves the existing URL) even though the
-    // display name is now "PDF Studio" — PDF Studio is a complete, unified
-    // multi-tab application (Pages/Convert/Metadata/Security), not a plain
-    // tool list, same reasoning as Data Studio and Image Studio below.
-    slug: "pdf-tools",
+    // Renamed from "pdf-tools" so the URL matches the display name, the way
+    // /data-studio always has — PDF Studio is a complete, unified multi-tab
+    // application (View/Pages/Convert/Metadata/Security), not a plain tool
+    // list. The old slug (and every capability page under it) permanently
+    // redirects here — see `next.config.ts#redirects()`. Same for the two
+    // below.
+    slug: "pdf-studio",
     name: "PDF Studio",
     engine: "pdf",
     description:
-      "Merge, split, rotate, convert and manage metadata on PDF documents locally in your browser.",
+      "Read, merge, split, rotate, convert and manage metadata on PDF documents locally in your browser.",
   },
   {
-    // Slug stays "image-tools" for the same URL-preservation reason as
-    // pdf-tools above.
-    slug: "image-tools",
+    // Renamed from "image-tools", same reasoning and same redirect treatment
+    // as pdf-studio above.
+    slug: "image-studio",
     name: "Image Studio",
     engine: "image",
     description: "Convert, resize and compress images entirely in your browser.",
   },
   {
-    // Slug stays "geospatial-tools" for the same URL-preservation reason.
-    slug: "geospatial-tools",
+    // Renamed from "geospatial-tools", same reasoning and redirect treatment.
+    slug: "geospatial-studio",
     name: "Geospatial Studio",
     engine: "geospatial",
     description: "View and convert GeoJSON, KML and GPX files locally.",

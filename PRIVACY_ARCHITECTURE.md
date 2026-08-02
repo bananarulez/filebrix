@@ -132,6 +132,20 @@ persistent browser storage (§6). Workers receive the `File` object directly
 via `postMessage`'s structured clone (a same-process, same-device transfer
 — not serialization to a wire format) and return a `Blob` the same way.
 
+**How long a file is held in memory (changed deliberately).** Each Studio
+now owns its loaded file centrally — `PdfWorkspace`, `ImageWorkspace`,
+`GeoWorkspace`, and `SpreadsheetDataApp` — instead of each tool owning its
+own copy, so a file dropped once survives switching tabs and actions.
+The privacy-relevant consequence, stated plainly: the `File` (and, for
+PDFs, the parsed pdf.js render session) is retained in memory for as long
+as the user stays in that Studio, rather than being dropped the moment they
+switch tools. It is still only ever in memory, in that tab, in that page's
+JS heap — never in `localStorage`/`sessionStorage`/IndexedDB (§6), never on
+a network. It is released on **Clear**, on loading a different file, and on
+navigating away (the providers close PDF render sessions on replace, clear
+and unmount). A full page reload always starts empty — the same property
+`lib/fileHandoff.ts` relies on.
+
 **Filenames are treated as untrusted input**, since a `File`'s `.name` is
 fully attacker-controlled (scripted drag-and-drop, not just an OS save
 dialog). `src/lib/security/filenames.ts`'s `sanitizeFilename()` strips path

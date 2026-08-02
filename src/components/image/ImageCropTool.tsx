@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { FileDropZone } from "@/components/tools/FileDropZone";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ImageBatchList, batchKey } from "./ImageBatchList";
+import { useImageWorkspace } from "./ImageWorkspace";
 import { processImageFile } from "@/engines/image";
 import type { RasterFormat } from "@/engines/image";
 import { detectFileType } from "@/lib/detect/detectFile";
@@ -43,10 +43,16 @@ function clampRect(rect: Rect, bounds: { width: number; height: number }): Rect 
  * image first). Single-file only: a shared crop rectangle across an
  * arbitrary batch of unrelated images wouldn't make sense the way a shared
  * resize/rotate setting does. Delivers its result through the same
- * ImageBatchList every other edit tool uses, keyed to a single file. */
+ * ImageBatchList every other edit tool uses, keyed to a single file.
+ *
+ * Presentational with respect to the file: it comes from `ImageWorkspace`
+ * (the first one, since Crop is single-image), and `ImageStudioApp` keys
+ * this component on `documentKey`, so a new drop remounts it with a fresh
+ * crop rectangle. */
 export function ImageCropTool({ onResult }: { onResult?: (file: File, blob: Blob) => void }) {
-  const [file, setFile] = useState<File | null>(null);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const { files } = useImageWorkspace();
+  const file = files[0] ?? null;
+
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [displaySize, setDisplaySize] = useState<{ width: number; height: number } | null>(null);
   const [rect, setRect] = useState<Rect | null>(null);
@@ -54,23 +60,12 @@ export function ImageCropTool({ onResult }: { onResult?: (file: File, blob: Blob
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
 
+  const imageUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
   useEffect(() => {
     return () => {
       if (imageUrl) URL.revokeObjectURL(imageUrl);
     };
   }, [imageUrl]);
-
-  function handleFilesSelected(selected: File[]) {
-    const [selectedFile] = selected;
-    if (!selectedFile) return;
-    if (imageUrl) URL.revokeObjectURL(imageUrl);
-    setFile(selectedFile);
-    setImageUrl(URL.createObjectURL(selectedFile));
-    setNaturalSize(null);
-    setDisplaySize(null);
-    setRect(null);
-    setJob(null);
-  }
 
   function handleImageLoad(event: React.SyntheticEvent<HTMLImageElement>) {
     const img = event.currentTarget;
@@ -147,26 +142,8 @@ export function ImageCropTool({ onResult }: { onResult?: (file: File, blob: Blob
     setJob({ file, crop });
   }
 
-  function handleClear() {
-    if (imageUrl) URL.revokeObjectURL(imageUrl);
-    setFile(null);
-    setImageUrl(null);
-    setNaturalSize(null);
-    setDisplaySize(null);
-    setRect(null);
-    setJob(null);
-  }
-
   return (
     <div className="flex flex-col gap-4">
-      <FileDropZone
-        label={file ? "Drop a different image" : "Drop a PNG, JPEG or WebP image here"}
-        hint="Nothing is uploaded — every image is processed entirely on your device."
-        accept="image/png,image/jpeg,image/webp"
-        onFilesSelected={handleFilesSelected}
-        toolSlug="crop-image"
-      />
-
       {imageUrl && (
         <div className="flex flex-col gap-3">
           <div ref={containerRef} className="relative inline-block max-w-full select-none">
@@ -217,13 +194,6 @@ export function ImageCropTool({ onResult }: { onResult?: (file: File, blob: Blob
               className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
               Apply Crop
-            </button>
-            <button
-              type="button"
-              onClick={handleClear}
-              className="rounded-md border border-gray-200 px-3 py-1.5 text-gray-600 hover:border-gray-400 hover:text-gray-900 dark:border-gray-700 dark:text-gray-300 dark:hover:text-white"
-            >
-              Clear
             </button>
             {rect && naturalSize && displaySize && (
               <span className="text-xs text-gray-500">

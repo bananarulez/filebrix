@@ -139,10 +139,31 @@ export function ImageBatchList({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Revoke each preview URL when the *page* goes away, not on React unmount.
+  //
+  // This used to revoke on unmount with an empty dep array, which is wrong
+  // under React Strict Mode: dev double-invokes effects (mount → cleanup →
+  // mount) while `entries` — and therefore the object URLs created in its
+  // `useState` initializer — survive, so the second mount rendered URLs the
+  // first cleanup had already revoked. Every result thumbnail showed as a
+  // broken image in `npm run dev`, on every image tool.
+  //
+  // Invisible to `npx playwright test`, which runs a production build where
+  // Strict Mode doesn't double-invoke — the same dev-only blind spot
+  // documented for `GeoMap.tsx`'s `relative` class. Found by looking at the
+  // dev server in a browser.
+  //
+  // `pagehide` is the honest scope: these URLs live exactly as long as the
+  // document does. Object URLs are reclaimed with the document anyway, so
+  // the listener is tidiness rather than a leak fix, and it can never revoke
+  // a URL the component is still rendering.
   useEffect(() => {
-    return () => {
-      for (const entry of entries) URL.revokeObjectURL(entry.previewUrl);
+    const urls = entries.map((entry) => entry.previewUrl);
+    const revokeAll = () => {
+      for (const url of urls) URL.revokeObjectURL(url);
     };
+    window.addEventListener("pagehide", revokeAll);
+    return () => window.removeEventListener("pagehide", revokeAll);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

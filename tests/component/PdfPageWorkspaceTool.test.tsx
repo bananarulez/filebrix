@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { screen, waitFor, fireEvent } from "@testing-library/react";
 import { PdfPageWorkspaceTool } from "@/components/pdf/PdfPageWorkspaceTool";
+import { renderWithPdfWorkspace } from "./pdfWorkspaceHarness";
 import { inspectPdfFile, buildPdfFromSelectionFiles } from "@/engines/pdf";
 import { openPdfRenderSession } from "@/engines/pdf/render/session";
 import { ProcessingError } from "@/lib/errors/ProcessingError";
@@ -69,7 +70,7 @@ describe("PdfPageWorkspaceTool — extract mode", () => {
     mockedInspect.mockResolvedValue(makeInfo(3));
     mockedOpenSession.mockResolvedValue(makeSession());
 
-    render(<PdfPageWorkspaceTool mode="extract" />);
+    renderWithPdfWorkspace(<PdfPageWorkspaceTool mode="extract" />);
     selectFile(makeFile("doc.pdf"));
 
     await waitFor(() => expect(screen.getAllByText(/^Page \d$/)).toHaveLength(3));
@@ -86,7 +87,7 @@ describe("PdfPageWorkspaceTool — extract mode", () => {
     mockedOpenSession.mockResolvedValue(makeSession());
     mockedBuild.mockResolvedValue(new Blob(["pdf"], { type: "application/pdf" }));
 
-    render(<PdfPageWorkspaceTool mode="extract" />);
+    renderWithPdfWorkspace(<PdfPageWorkspaceTool mode="extract" />);
     selectFile(makeFile("doc.pdf"));
     await waitFor(() => expect(screen.getAllByText(/^Page \d$/)).toHaveLength(2));
 
@@ -109,7 +110,7 @@ describe("PdfPageWorkspaceTool — delete mode", () => {
     mockedInspect.mockResolvedValue(makeInfo(2));
     mockedOpenSession.mockResolvedValue(makeSession());
 
-    render(<PdfPageWorkspaceTool mode="delete" />);
+    renderWithPdfWorkspace(<PdfPageWorkspaceTool mode="delete" />);
     selectFile(makeFile("doc.pdf"));
     await waitFor(() => expect(screen.getAllByText(/^Page \d$/)).toHaveLength(2));
 
@@ -130,7 +131,7 @@ describe("PdfPageWorkspaceTool — merge mode", () => {
     mockedInspect.mockResolvedValue(makeInfo(1));
     mockedOpenSession.mockResolvedValue(makeSession());
 
-    render(<PdfPageWorkspaceTool mode="merge" />);
+    renderWithPdfWorkspace(<PdfPageWorkspaceTool mode="merge" />, { multiple: true });
     selectFile(makeFile("a.pdf"));
     await waitFor(() => expect(screen.getAllByText(/^Page \d$/)).toHaveLength(1));
 
@@ -147,7 +148,7 @@ describe("PdfPageWorkspaceTool — rotate mode", () => {
     mockedOpenSession.mockResolvedValue(makeSession());
     mockedBuild.mockResolvedValue(new Blob(["pdf"], { type: "application/pdf" }));
 
-    render(<PdfPageWorkspaceTool mode="rotate" />);
+    renderWithPdfWorkspace(<PdfPageWorkspaceTool mode="rotate" />);
     selectFile(makeFile("doc.pdf"));
     await waitFor(() => expect(screen.getAllByText(/^Page \d$/)).toHaveLength(1));
 
@@ -175,7 +176,7 @@ describe("PdfPageWorkspaceTool — out-of-order file drops", () => {
     mockedInspect.mockResolvedValueOnce(makeInfo(5)).mockResolvedValueOnce(makeInfo(2));
     mockedOpenSession.mockReturnValueOnce(stalled.promise).mockResolvedValueOnce(secondSession);
 
-    render(<PdfPageWorkspaceTool mode="extract" />);
+    renderWithPdfWorkspace(<PdfPageWorkspaceTool mode="extract" />);
     selectFile(makeFile("slow.pdf"));
     await waitFor(() => expect(mockedOpenSession).toHaveBeenCalledTimes(1));
 
@@ -203,7 +204,7 @@ describe("PdfPageWorkspaceTool — progress reporting", () => {
       return build.promise;
     });
 
-    render(<PdfPageWorkspaceTool mode="reorder" />);
+    renderWithPdfWorkspace(<PdfPageWorkspaceTool mode="reorder" />);
     selectFile(makeFile("doc.pdf"));
     await waitFor(() => expect(screen.getAllByText(/^Page \d$/)).toHaveLength(2));
 
@@ -224,7 +225,7 @@ describe("PdfPageWorkspaceTool — error handling", () => {
       new ProcessingError("UNSUPPORTED_FORMAT", "This PDF is password-protected.")
     );
 
-    render(<PdfPageWorkspaceTool mode="reorder" />);
+    renderWithPdfWorkspace(<PdfPageWorkspaceTool mode="reorder" />);
     selectFile(makeFile("secret.pdf"));
 
     await waitFor(() => expect(screen.getByText("This PDF is password-protected.")).toBeInTheDocument());

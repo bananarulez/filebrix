@@ -6,6 +6,7 @@ import { AdSlot } from "@/components/tools/AdSlot";
 import { Breadcrumbs } from "@/components/seo/Breadcrumbs";
 import { RelatedApplications } from "@/components/seo/RelatedApplications";
 import { DevCategoryCard } from "@/components/developer-toolkit/DevCategoryCard";
+import { PageContainer, ProseContainer } from "@/components/layout/PageContainer";
 
 const CATEGORY = CATEGORIES.find((c) => c.slug === "developer-tools")!;
 
@@ -28,12 +29,14 @@ export const metadata = buildCategoryMetadata(
  */
 export default function Page() {
   return (
-    <div className="mx-auto flex w-full max-w-[54rem] flex-col gap-8 px-4 py-16">
+    <PageContainer className="gap-8 py-16">
       <div className="flex flex-col gap-4">
         <Breadcrumbs items={[{ name: "Home", href: "/" }, { name: CATEGORY.name, href: "/developer-tools" }]} />
         <header className="flex flex-col gap-2">
           <h1 className="text-3xl font-semibold">{CATEGORY.name}</h1>
-          <p className="text-gray-600 dark:text-gray-300">{CATEGORY.description}</p>
+          <ProseContainer>
+            <p className="text-gray-600 dark:text-gray-300">{CATEGORY.description}</p>
+          </ProseContainer>
         </header>
       </div>
 
@@ -52,6 +55,6 @@ export default function Page() {
       <AdSlot placement="category-page" />
 
       <RelatedApplications excludeSlug="developer-tools" />
-    </div>
+    </PageContainer>
   );
 }

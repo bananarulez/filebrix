@@ -3,13 +3,22 @@
 import { useState } from "react";
 import { AppShell } from "@/components/app-shell/AppShell";
 import { Toolbar, type ToolbarModeOption } from "@/components/app-shell/Toolbar";
+import { studioTabId } from "@/components/app-shell/tabIds";
 import { ActionPicker } from "@/components/app-shell/ActionPicker";
 import { ImageTransformTool, type TransformMode } from "./ImageTransformTool";
 import { ImageCropTool } from "./ImageCropTool";
+import { ImageWatermarkTool } from "./ImageWatermarkTool";
 import { ImageConvertTool } from "./ImageConvertTool";
 import { SvgToPngTool } from "./SvgToPngTool";
 import { ImageMetadataTool } from "./ImageMetadataTool";
 import { ImageViewerTool } from "./ImageViewerTool";
+import { ImageFilePanel, ImageWorkspace, useImageWorkspace } from "./ImageWorkspace";
+import {
+  acceptFor,
+  actionAcceptsMultiple,
+  actionNeedsFile,
+  buildDisabledReasons,
+} from "./actionFormats";
 import type { RasterFormat } from "@/engines/image";
 
 export type ImageStudioTab = "view" | "edit" | "convert" | "metadata";
@@ -117,18 +126,6 @@ const CONVERT_PAIR_FORMATS: Partial<Record<ConvertPair, { source: RasterFormat; 
 };
 
 
-function WatermarkPlaceholder() {
-  return (
-    <div className="flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-6 text-sm text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
-      <p className="font-medium text-gray-900 dark:text-white">Watermarking isn&rsquo;t available yet</p>
-      <p>
-        Adding a text or image watermark is planned for Image Studio. This tab is reserved for that feature —
-        nothing is uploaded or processed here.
-      </p>
-    </div>
-  );
-}
-
 /**
  * One shared shell hosting all 13 existing image tools, every one of them
  * reused unchanged (plus two genuinely new ones, Crop and the Viewer), via
@@ -154,94 +151,190 @@ function WatermarkPlaceholder() {
  * top-level View/Edit/Convert/Metadata tab bar always stays switchable,
  * matching how a locked Data/PDF Studio tool can still switch modes.
  *
- * No `toolSlug` prop: every sub-component already owns its own `FileDropZone`
- * with its own hardcoded `toolSlug` (or none, for the newly added actions
- * that have no standalone registry entry — see the plan's scoping notes).
+ * The loaded images live in `ImageWorkspace`, not in each tool, so switching
+ * tabs — or Edit actions, e.g. Resize to Rotate — keeps them. See that file
+ * for why, and `actionFormats.ts` for how an action a loaded image can't
+ * support is disabled rather than mounted.
  *
  * `editedResult` is lifted here (not in ImageViewerTool) so a single-file
  * Edit-tab result survives switching to the View tab for a before/after
  * compare — see ImageTransformTool/ImageCropTool's `onResult` prop.
  */
-export function ImageStudioApp({
+export function ImageStudioApp(props: ImageStudioAppProps) {
+  return (
+    <ImageWorkspace>
+      <ImageStudioBody {...props} />
+    </ImageWorkspace>
+  );
+}
+
+/** The registry slug of whatever tool is active, for the Universal File Drop handoff (CLAUDE.md rule 9). */
+function activeToolSlug(
+  tab: ImageStudioTab,
+  editAction: EditAction,
+  convertPair: ConvertPair,
+  metadataMode: MetadataMode
+): string | undefined {
+  // Crop and Watermark have no standalone tool page, and neither does View.
+  if (tab === "edit") return isTransformMode(editAction) ? `${editAction}-image` : undefined;
+  if (tab === "convert") return convertPair;
+  if (tab === "metadata") return metadataMode === "view" ? "image-metadata-viewer" : "remove-image-metadata";
+  return undefined;
+}
+
+function ImageStudioBody({
   initialTab = "view",
   lockedEditAction,
   lockedConvertPair,
   lockedMetadataMode,
 }: ImageStudioAppProps) {
+  const { commonFormat, documentKey } = useImageWorkspace();
   const [tab, setTab] = useState<ImageStudioTab>(initialTab);
   const [editAction, setEditAction] = useState<EditAction>(lockedEditAction ?? "crop");
   const [convertPair, setConvertPair] = useState<ConvertPair>(lockedConvertPair ?? "png-to-jpg");
   const [metadataMode, setMetadataMode] = useState<MetadataMode>(lockedMetadataMode ?? "view");
   const [editedResult, setEditedResult] = useState<{ sourceFile: File; blob: Blob } | null>(null);
 
-  const activeEditAction = lockedEditAction ?? editAction;
-  const activeConvertPair = lockedConvertPair ?? convertPair;
-  const activeMetadataMode = lockedMetadataMode ?? metadataMode;
+  const editDisabled = buildDisabledReasons(EDIT_ACTIONS, commonFormat);
+  const convertDisabled = buildDisabledReasons(CONVERT_PAIRS, commonFormat);
+  const metadataDisabled = buildDisabledReasons(METADATA_MODES, commonFormat);
+
+  /**
+   * If the loaded images' format rules out the action the user had selected,
+   * fall back to the first one it *does* support rather than mounting a tool
+   * that can't run — the same rule Geospatial Studio applies. A locked action
+   * is never overridden: that page promised one specific tool.
+   */
+  function resolve<T extends string>(
+    locked: T | undefined,
+    selected: T,
+    actions: readonly T[],
+    disabled: Partial<Record<T, string>>
+  ): T {
+    if (locked) return locked;
+    if (!disabled[selected]) return selected;
+    return actions.find((action) => !disabled[action]) ?? selected;
+  }
+
+  const activeEditAction = resolve(lockedEditAction, editAction, EDIT_ACTIONS, editDisabled);
+  const activeConvertPair = resolve(lockedConvertPair, convertPair, CONVERT_PAIRS, convertDisabled);
+  const activeMetadataMode = resolve(lockedMetadataMode, metadataMode, METADATA_MODES, metadataDisabled);
   const convertFormats = CONVERT_PAIR_FORMATS[activeConvertPair];
+
+  /**
+   * View has no action picker (it never had one), so its "action" for
+   * drop-zone purposes is the whole accepted set — every other tab's active
+   * action decides whether a drop zone shows at all, how many files it
+   * takes, and what it filters for.
+   */
+  const activeAction =
+    tab === "view"
+      ? null
+      : tab === "edit"
+        ? activeEditAction
+        : tab === "convert"
+          ? activeConvertPair
+          : activeMetadataMode;
+
+  /**
+   * The drop zone's file-picker filter is narrowed to the active action's own
+   * formats **only on a locked tool page**, where that one action is the
+   * whole point of the URL. On the Studio itself it deliberately stays the
+   * full accepted set: narrowing it there would make an action the current
+   * file rules out unreachable — with a PNG loaded, "SVG to PNG" is disabled
+   * *and* the picker wouldn't let you choose the SVG that would re-enable it,
+   * so the only way out would be Clear. Geospatial Studio's one accept string
+   * works the same way for the same reason.
+   */
+  const lockedActiveAction =
+    tab === "edit"
+      ? lockedEditAction
+      : tab === "convert"
+        ? lockedConvertPair
+        : tab === "metadata"
+          ? lockedMetadataMode
+          : undefined;
 
   function handleEditResult(file: File, blob: Blob) {
     setEditedResult({ sourceFile: file, blob });
   }
 
   return (
-    <AppShell toolbar={<Toolbar modes={TAB_OPTIONS} activeMode={tab} onModeChange={setTab} />}>
+    <AppShell activeTabId={studioTabId(tab)} toolbar={<Toolbar modes={TAB_OPTIONS} activeMode={tab} onModeChange={setTab} />}>
+      {/* Order matches the other three Studios: tab bar (in the shell's own
+       * toolbar slot) -> action picker -> drop zone -> the tool's own UI. */}
       <div className="flex flex-col gap-4">
-        {tab === "view" && <ImageViewerTool editedResult={editedResult} />}
+        {tab === "edit" && !lockedEditAction && (
+          <ActionPicker
+            options={EDIT_ACTIONS}
+            labels={EDIT_ACTION_LABEL}
+            disabledReasons={editDisabled}
+            active={activeEditAction}
+            onChange={setEditAction}
+          />
+        )}
+        {tab === "convert" && !lockedConvertPair && (
+          <ActionPicker
+            options={CONVERT_PAIRS}
+            labels={CONVERT_PAIR_LABEL}
+            disabledReasons={convertDisabled}
+            active={activeConvertPair}
+            onChange={setConvertPair}
+          />
+        )}
+        {tab === "metadata" && !lockedMetadataMode && (
+          <ActionPicker
+            options={METADATA_MODES}
+            labels={METADATA_MODE_LABEL}
+            disabledReasons={metadataDisabled}
+            active={activeMetadataMode}
+            onChange={setMetadataMode}
+          />
+        )}
+
+        {(activeAction === null || actionNeedsFile(activeAction)) && (
+          <ImageFilePanel
+            multiple={activeAction === null || actionAcceptsMultiple(activeAction)}
+            accept={lockedActiveAction ? acceptFor(lockedActiveAction) : undefined}
+            toolSlug={activeToolSlug(tab, activeEditAction, activeConvertPair, activeMetadataMode)}
+          />
+        )}
+
+        {tab === "view" && <ImageViewerTool key={`view-${documentKey}`} editedResult={editedResult} />}
 
         {tab === "edit" && (
           <>
-            {!lockedEditAction && (
-              <ActionPicker
-                options={EDIT_ACTIONS}
-                labels={EDIT_ACTION_LABEL}
-                active={activeEditAction}
-                onChange={setEditAction}
-              />
+            {activeEditAction === "crop" && (
+              <ImageCropTool key={`crop-${documentKey}`} onResult={handleEditResult} />
             )}
-            {activeEditAction === "crop" && <ImageCropTool key="crop" onResult={handleEditResult} />}
-            {activeEditAction === "watermark" && <WatermarkPlaceholder key="watermark" />}
+            {activeEditAction === "watermark" && (
+              <ImageWatermarkTool key={`watermark-${documentKey}`} onResult={handleEditResult} />
+            )}
             {isTransformMode(activeEditAction) && (
-              <ImageTransformTool key={activeEditAction} mode={activeEditAction} onResult={handleEditResult} />
+              <ImageTransformTool
+                key={`${activeEditAction}-${documentKey}`}
+                mode={activeEditAction}
+                onResult={handleEditResult}
+              />
             )}
           </>
         )}
 
-        {tab === "convert" && (
-          <>
-            {!lockedConvertPair && (
-              <ActionPicker
-                options={CONVERT_PAIRS}
-                labels={CONVERT_PAIR_LABEL}
-                active={activeConvertPair}
-                onChange={setConvertPair}
+        {tab === "convert" &&
+          (activeConvertPair === "svg-to-png" ? (
+            <SvgToPngTool key={`svg-to-png-${documentKey}`} />
+          ) : (
+            convertFormats && (
+              <ImageConvertTool
+                key={`${activeConvertPair}-${documentKey}`}
+                sourceFormat={convertFormats.source}
+                targetFormat={convertFormats.target}
               />
-            )}
-            {activeConvertPair === "svg-to-png" ? (
-              <SvgToPngTool key="svg-to-png" />
-            ) : (
-              convertFormats && (
-                <ImageConvertTool
-                  key={activeConvertPair}
-                  sourceFormat={convertFormats.source}
-                  targetFormat={convertFormats.target}
-                />
-              )
-            )}
-          </>
-        )}
+            )
+          ))}
 
         {tab === "metadata" && (
-          <>
-            {!lockedMetadataMode && (
-              <ActionPicker
-                options={METADATA_MODES}
-                labels={METADATA_MODE_LABEL}
-                active={activeMetadataMode}
-                onChange={setMetadataMode}
-              />
-            )}
-            <ImageMetadataTool key={activeMetadataMode} mode={activeMetadataMode} />
-          </>
+          <ImageMetadataTool key={`${activeMetadataMode}-${documentKey}`} mode={activeMetadataMode} />
         )}
       </div>
     </AppShell>

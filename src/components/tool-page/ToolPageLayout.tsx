@@ -9,6 +9,7 @@ import { FAQ } from "@/components/tools/FAQ";
 import { RelatedTools } from "@/components/tools/RelatedTools";
 import { AdSlot } from "@/components/tools/AdSlot";
 import { Breadcrumbs } from "@/components/seo/Breadcrumbs";
+import { PageContainer, ProseContainer } from "@/components/layout/PageContainer";
 
 interface ToolPageLayoutProps {
   tool: ToolDefinition;
@@ -56,13 +57,17 @@ export function ToolPageLayout({ tool, children, steps, toolList }: ToolPageLayo
   ];
 
   return (
-    <div className="mx-auto flex w-full max-w-[54rem] flex-col gap-10 px-4 py-12">
+    <PageContainer className="gap-10 py-12">
       <div className="flex flex-col gap-4">
         <Breadcrumbs items={breadcrumbItems} />
         <header className="flex flex-col gap-3">
           <LocalProcessingBadge />
           <h1 className="text-3xl font-semibold">{tool.name}</h1>
-          <p className="text-gray-600 dark:text-gray-300">{tool.description}</p>
+          {/* Prose measure, not the full application width — the tool's own
+              UI below is what should use the room. */}
+          <ProseContainer>
+            <p className="text-gray-600 dark:text-gray-300">{tool.description}</p>
+          </ProseContainer>
         </header>
       </div>
 
@@ -77,6 +82,6 @@ export function ToolPageLayout({ tool, children, steps, toolList }: ToolPageLayo
       <FAQ items={tool.faq ?? []} />
 
       <RelatedTools tools={related} />
-    </div>
+    </PageContainer>
   );
 }

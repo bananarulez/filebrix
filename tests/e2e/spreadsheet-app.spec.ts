@@ -13,7 +13,7 @@ test.describe("Data Studio app hub (/data-studio)", () => {
   test("the page's reading-width column stays the same width before and after a file loads — it never widens, to keep room for ads in the side margins", async ({
     page,
   }) => {
-    await page.goto("/pdf-tools");
+    await page.goto("/pdf-studio");
     const pdfWidth = await page
       .getByRole("heading", { level: 1 })
       .evaluate((el) => el.closest("div")!.parentElement!.getBoundingClientRect().width);

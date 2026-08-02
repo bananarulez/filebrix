@@ -1,8 +1,9 @@
 import type { AppMode, Engine, FileFormat, ToolFaqItem } from "./types";
 import { CATEGORIES } from "./categories";
+import { getToolsByEngine } from "./index";
 
 /** The four category slugs that are unified, multi-tab Studio applications — everything in `CATEGORIES` except Developer Toolkit (deliberately not a Studio, see `categories.ts`). */
-export type StudioCategorySlug = "data-studio" | "pdf-tools" | "image-tools" | "geospatial-tools";
+export type StudioCategorySlug = "data-studio" | "pdf-studio" | "image-studio" | "geospatial-studio";
 
 export interface StudioAction {
   id: AppMode;
@@ -14,8 +15,8 @@ export interface StudioAction {
    * that, since TypeScript can't express "required only when tools exist."
    *
    * Absent means the capability exists only *inside* the Studio app and has
-   * no standalone tools to index (PDF Studio's Security, Image Studio's
-   * View, Geospatial Studio's Analyze) — deliberately no index page, since
+   * no standalone tools to index (PDF Studio's and Image Studio's View
+   * tabs) — deliberately no index page, since
    * a page listing zero tools is thin content that would hurt rather than
    * help crawlability.
    */
@@ -108,11 +109,15 @@ export const STUDIOS: StudioDefinition[] = [
     ],
   },
   {
-    categorySlug: "pdf-tools",
+    categorySlug: "pdf-studio",
     description:
-      "Merge, split, rotate, reorder, extract and delete pages, convert between PDFs and images or text, and view or remove metadata — entirely in your browser. Switch tabs anytime; nothing is ever uploaded.",
+      "Read a PDF page by page, merge, split, rotate, reorder, extract and delete pages, convert between PDFs and images or text, and view or remove metadata — entirely in your browser. Drop a file once and switch tabs freely; nothing is ever uploaded.",
     acceptedFileTypes: ["pdf", "png", "jpg"],
     actions: [
+      // No indexDescription: View is a Studio-only capability (the in-app
+      // page-by-page PDF reader) with no standalone tools, exactly like
+      // Image Studio's own View tab — see StudioAction's doc comment.
+      { id: "view", label: "View" },
       {
         id: "pages",
         label: "Pages",
@@ -131,9 +136,6 @@ export const STUDIOS: StudioDefinition[] = [
         indexDescription:
           "Inspect or strip a PDF's title, author, creation date and producer metadata locally in your browser, before you share the file.",
       },
-      // No indexDescription: Security is a placeholder tab with no tools —
-      // see StudioAction's own doc comment.
-      { id: "security", label: "Security" },
     ],
     defaultAction: "pages",
     relatedEngines: ["pdf"],
@@ -144,6 +146,11 @@ export const STUDIOS: StudioDefinition[] = [
           "No. Merging, splitting, rotating, converting and every other operation happens locally in your browser.",
       },
       {
+        question: "Can I switch between tabs without re-selecting my PDF?",
+        answer:
+          "Yes — drop a PDF once and switch freely between View, Pages, Convert and Metadata, or between Pages actions like Merge and Split. The same loaded document carries over to every tab.",
+      },
+      {
         question: "Can PDF Studio open password-protected PDFs?",
         answer:
           "Not yet — encrypted PDFs are detected and rejected with a clear message across every tab, since the underlying library has no way to decrypt them locally.",
@@ -151,19 +158,19 @@ export const STUDIOS: StudioDefinition[] = [
       {
         question: "Do the individual tool pages (Merge PDF, Split PDF, ...) still work?",
         answer:
-          "Yes — every one of the 11 individual PDF tool pages still has its own dedicated URL; PDF Studio is a superset covering all of them in one place.",
+          "Yes — every one of the {toolCount} individual PDF tool pages still has its own dedicated URL; PDF Studio is a superset covering all of them in one place.",
       },
       {
-        question: "Is password protection or watermarking available?",
+        question: "Can I password-protect a PDF here?",
         answer:
-          "Not yet — the Security tab is a placeholder reserved for planned password-protection support.",
+          "No. The library this app uses to edit PDFs locally can detect encryption but cannot write it, so rather than show a permanently empty tab, the feature isn't offered — every other PDF operation works normally.",
       },
     ],
   },
   {
-    categorySlug: "image-tools",
+    categorySlug: "image-studio",
     description:
-      "View, edit and convert PNG, JPG, WebP and SVG images, and inspect EXIF metadata — entirely in your browser. Switch tabs anytime; nothing is ever uploaded.",
+      "View, edit and convert PNG, JPG, WebP and SVG images, and inspect EXIF metadata — entirely in your browser. Drop your images once and switch tabs freely; nothing is ever uploaded.",
     acceptedFileTypes: ["png", "jpg", "webp", "svg"],
     actions: [
       // No indexDescription: View is a Studio-only capability (the in-app
@@ -197,6 +204,11 @@ export const STUDIOS: StudioDefinition[] = [
           "No. Every conversion and edit runs locally in your browser using the Canvas API — nothing is ever sent to a server.",
       },
       {
+        question: "Can I switch between tabs without re-selecting my images?",
+        answer:
+          "Yes — drop your images once and switch freely between View, Edit, Convert and Metadata. The same loaded images carry over to every tab.",
+      },
+      {
         question: "Is EXIF orientation handled automatically?",
         answer:
           "Yes — your browser applies EXIF orientation on decode, so output images are already correctly oriented with no extra step.",
@@ -204,18 +216,19 @@ export const STUDIOS: StudioDefinition[] = [
       {
         question: "Do the individual tool pages (Resize Image, PNG to JPG, ...) still work?",
         answer:
-          "Yes — every one of the 13 individual image tool pages still has its own dedicated URL; Image Studio is a superset covering all of them in one place.",
+          "Yes — every one of the {toolCount} individual image tool pages still has its own dedicated URL; Image Studio is a superset covering all of them in one place.",
       },
       {
-        question: "Is watermarking available?",
-        answer: "Not yet — the Watermark tab is a placeholder reserved for a planned feature.",
+        question: "Can I add a watermark?",
+        answer:
+          "Yes — Edit → Watermark draws text over your images with a position, size, colour and opacity you choose, and works across a whole batch at once. Like everything else here, it runs on your device.",
       },
     ],
   },
   {
-    categorySlug: "geospatial-tools",
+    categorySlug: "geospatial-studio",
     description:
-      "View, edit, analyze and convert GeoJSON, KML and GPX files — entirely in your browser. Switch tabs anytime; nothing is ever uploaded.",
+      "View, edit, analyze and convert GeoJSON, KML and GPX files — entirely in your browser. Drop a file once and switch tabs freely; nothing is ever uploaded.",
     acceptedFileTypes: ["geojson", "kml", "gpx", "csv"],
     actions: [
       {
@@ -255,18 +268,19 @@ export const STUDIOS: StudioDefinition[] = [
           "No — only anonymous map tile images are fetched from the basemap provider. Your geometries, coordinates and properties are rendered locally and never transmitted.",
       },
       {
+        question: "Can I switch between tabs without re-selecting my file?",
+        answer:
+          "Yes — drop a file once and switch freely between View, Edit, Analyze and Convert. The same loaded data carries over to every tab.",
+      },
+      {
         question: "Do the individual tool pages (GeoJSON Viewer, KML to GeoJSON, ...) still work?",
         answer:
-          "Yes — every one of the 11 individual geospatial tool pages still has its own dedicated URL; Geospatial Studio is a superset covering all of them in one place.",
+          "Yes — every one of the {toolCount} individual geospatial tool pages still has its own dedicated URL; Geospatial Studio is a superset covering all of them in one place.",
       },
       {
         question: "What coordinate reference system is used?",
         answer:
           "WGS84 (EPSG:4326) — the standard for GeoJSON, and what everything normalized through this app's KML/GPX converters uses too.",
-      },
-      {
-        question: "Is editing coordinates directly on the map available?",
-        answer: "Not yet — the Coordinate Editing tab is a placeholder reserved for a planned feature.",
       },
     ],
   },
@@ -275,6 +289,35 @@ export const STUDIOS: StudioDefinition[] = [
 export interface StudioConfig extends StudioDefinition {
   title: string;
   engine: Engine;
+  /** How many standalone tool pages this Studio covers, counted from the registry. */
+  toolCount: number;
+}
+
+/**
+ * Placeholders a `StudioDefinition`'s copy may contain, resolved by
+ * `getStudioConfig` before the text is ever rendered or fed to JSON-LD.
+ *
+ * `{toolCount}` exists because that number was written by hand in three FAQ
+ * answers and drifted — Geospatial Studio shipped "every one of the 11
+ * individual geospatial tool pages" for a while after it had grown to 15.
+ * Copy that states a fact the registry already knows should ask the
+ * registry, per rule 8; anything counted here is right by construction.
+ *
+ * Deliberately a tiny string substitution rather than a template system:
+ * the copy stays plain, greppable data in `STUDIOS`, and the only dynamic
+ * part is the one value that can go stale.
+ */
+function resolveStudioCopy(text: string, studio: StudioDefinition): string {
+  return text.replaceAll("{toolCount}", String(countStudioTools(studio)));
+}
+
+/**
+ * Counts every standalone tool page a Studio covers. Uses `relatedEngines`,
+ * not the category's own engine, so Data Studio correctly includes Parquet
+ * Viewer (registered under the separate `"parquet"` engine).
+ */
+export function countStudioTools(studio: StudioDefinition): number {
+  return studio.relatedEngines.reduce((total, engine) => total + getToolsByEngine(engine).length, 0);
 }
 
 /**
@@ -290,5 +333,18 @@ export function getStudioConfig(categorySlug: StudioCategorySlug): StudioConfig 
   if (!studio || !category) {
     throw new Error(`No Studio configuration registered for category slug "${categorySlug}".`);
   }
-  return { ...studio, title: category.name, engine: category.engine };
+  return {
+    ...studio,
+    title: category.name,
+    engine: category.engine,
+    toolCount: countStudioTools(studio),
+    description: resolveStudioCopy(studio.description, studio),
+    // Every consumer of a Studio's FAQ goes through this function, so
+    // resolving here means no placeholder can reach the DOM or the FAQPage
+    // JSON-LD — asserted in tests/unit/registryIntegrity.test.ts.
+    faq: studio.faq.map((item) => ({
+      question: resolveStudioCopy(item.question, studio),
+      answer: resolveStudioCopy(item.answer, studio),
+    })),
+  };
 }

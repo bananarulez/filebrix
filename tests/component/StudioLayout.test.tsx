@@ -20,6 +20,9 @@ describe("StudioLayout", () => {
   const studio: StudioConfig = {
     categorySlug: "data-studio",
     title: "Data Studio",
+    // Fixed rather than derived: this harness supplies its own two-tool list,
+    // so it must not depend on the real registry's size.
+    toolCount: 2,
     description: "View, edit, convert and analyze data files — entirely in your browser.",
     engine: "spreadsheet",
     acceptedFileTypes: ["csv", "json"],
