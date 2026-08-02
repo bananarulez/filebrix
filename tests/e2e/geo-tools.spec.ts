@@ -9,6 +9,27 @@ function fixture(name: string): string {
 
 test.describe.configure({ timeout: 60_000 });
 
+/**
+ * Whether this browser can actually create a WebGL context.
+ *
+ * MapLibre needs one to draw anything at all. Chromium ships a software
+ * renderer (SwiftShader) and has WebGL even headless on a bare CI runner;
+ * headless Firefox and WebKit on Linux generally do not. Without it MapLibre
+ * still creates its `<canvas>` — so the element is there, correctly sized and
+ * positioned — and simply never paints, which is why the failure showed up as
+ * "the polygon's blue fill is missing" rather than as an error.
+ *
+ * This is a *measurement*, not an assumption about CI: a browser that has
+ * WebGL runs the test normally, so if the map ever genuinely broke somewhere
+ * that can render, it still fails.
+ */
+async function hasWebGL(page: import("@playwright/test").Page): Promise<boolean> {
+  return page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    return Boolean(canvas.getContext("webgl2") ?? canvas.getContext("webgl"));
+  });
+}
+
 async function selectFile(page: import("@playwright/test").Page, url: string, filePath: string) {
   await page.goto(url);
   await page.locator('input[type="file"]').setInputFiles(filePath);
@@ -49,6 +70,18 @@ test.describe("GeoJSON Viewer", () => {
     // fix still matters for everyday `npm run dev` use, which is where a
     // real screenshot from this exact scenario first surfaced it.
     await selectFile(page, "/geo/geojson-viewer", fixture("polygon.geojson"));
+
+    // Everything below measures *pixels MapLibre drew*, which needs WebGL.
+    // Headless Firefox and WebKit on a CI runner don't have it, and this test
+    // failed there on every single run — a permanently red job that says
+    // nothing about the product teaches people to stop reading CI, which is
+    // worse than an honest skip. Chromium (SwiftShader) still runs it
+    // everywhere, and any browser that *can* render is still held to it.
+    test.skip(
+      !(await hasWebGL(page)),
+      "no WebGL in this browser — MapLibre cannot paint, so there are no pixels to sample"
+    );
+
     const canvas = page.locator(".maplibregl-canvas");
     await expect(canvas).toBeVisible({ timeout: 15_000 });
     await page.waitForTimeout(500); // let layout/position settle before measuring it
@@ -586,8 +619,18 @@ test.describe("Geospatial Studio — geometry operations", () => {
     await page.getByRole("button", { name: "Dissolve", exact: true }).waitFor({ timeout: 20_000 });
 
     // Keys come from the file itself, not a hardcoded list.
-    const options = await page.locator("select").last().locator("option").allTextContents();
-    expect(options).toEqual(expect.arrayContaining(["region", "pop"]));
+    //
+    // Addressed by its label, not `locator("select").last()`. That version
+    // passed locally for months and failed every CI run: this page also
+    // renders the map, whose own basemap picker is a second `<select>`, so
+    // `.last()` was racing the lazily-loaded map and read Light/Dark/Voyager
+    // instead of the file's attributes. A locator that depends on which of
+    // two controls finished mounting first is not a weaker assertion, it is
+    // a different one.
+    const groupBy = page.getByLabel("Dissolve by attribute (optional)");
+    expect(await groupBy.locator("option").allTextContents()).toEqual(
+      expect.arrayContaining(["region", "pop"])
+    );
 
     await page.getByRole("button", { name: "Dissolve", exact: true }).click();
     await expect(page.getByRole("button", { name: /Download dissolve result/i })).toBeVisible({ timeout: 25_000 });

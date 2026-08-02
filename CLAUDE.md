@@ -457,6 +457,28 @@ of sanitization, confirmed with a real script-carrying SVG payload in both
 a component test and a real-Chromium e2e test — verify this kind of claim
 with an actual payload, the same discipline already applied to XXE.
 
+**Two ways an e2e test can be green locally and red in CI forever**, both hit
+on the same run and both worth recognising before writing the next one.
+
+- **A locator that depends on which of two things mounted first.**
+  `page.locator("select").last()` read the dissolve tool's attribute dropdown
+  for months locally, and read the *map's* basemap picker (Light/Dark/Voyager)
+  on every CI run — the page has two `<select>`s and the map is lazily loaded,
+  so `.last()` was racing it. Address a control by its label
+  (`getByLabel("Dissolve by attribute (optional)")`); every control on this
+  site has one, and a positional locator across independently-mounting
+  components is a different assertion depending on timing.
+- **Headless Firefox and WebKit on a CI runner have no WebGL.** Chromium ships
+  SwiftShader and does; those two don't. MapLibre still creates and positions
+  its `<canvas>` and simply never paints, so the failure reads as "the
+  polygon's blue fill is missing" rather than as an error — a permanently red
+  job that says nothing about the product. `geo-tools.spec.ts` now *measures*
+  WebGL support and skips with that reason rather than asserting on pixels
+  that cannot exist. **Consequence: the map's rendering is verified in
+  Chromium only.** Firefox is covered locally (real GPU); WebKit's map
+  rendering is covered nowhere, so a MapLibre regression specific to Safari
+  would not be caught by this suite at all.
+
 **Playwright role-query text matching is substring-based, case-insensitive,
 by default — a repeat gotcha across every e2e round so far.** `getByRole
 ("button", { name: "Convert" })` also matches an unrelated element whose
