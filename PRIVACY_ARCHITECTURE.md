@@ -126,6 +126,33 @@ on top of that: even a future bug that tried to `fetch()` a file's bytes
 somewhere unexpected would be blocked by the browser itself, unless it
 specifically targeted CARTO's tile host with a GET request.
 
+### Transport security lives partly outside this repository
+
+Two settings are configured in the Cloudflare dashboard and appear nowhere in
+the code, so reading `public/_headers` alone under-describes what the site
+actually sends. Both were verified against the live domain:
+
+- **Always Use HTTPS** — `http://filebrix.com/...` 301s to `https://`. Before
+  it was enabled the site answered plain HTTP with a 200, which matters more
+  here than on most sites: the JavaScript that does all the file processing was
+  travelling unencrypted, so anyone between the visitor and Cloudflare could
+  have replaced it with code that uploads files. The CSP is no defence against
+  that — it arrives over the same unprotected connection and can be stripped.
+- **HSTS** — `Strict-Transport-Security: max-age=15552000; includeSubDomains`
+  (6 months). This closes the remaining gap: the *first* request of a session,
+  before any redirect can run. Preload is deliberately off; it writes the
+  domain into a list compiled into browsers, and removal takes months.
+
+`_headers` cannot express either one, and neither is reproducible from a
+`git clone`. If the site is ever moved off Cloudflare, both have to be
+re-established on the new host or the guarantees above quietly weaken.
+
+**A related asymmetry worth knowing:** `public/_headers` applies to *asset*
+responses only, never to responses from `worker/index.ts`. The Worker sets its
+own `Content-Type` and `Cache-Control`, and `X-Content-Type-Options` on those
+three paths comes from the Cloudflare-level No-Sniff setting rather than from
+this repository.
+
 ## 3. How local file processing works
 
 Every tool follows the same shape:

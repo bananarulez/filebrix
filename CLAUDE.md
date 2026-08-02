@@ -615,6 +615,17 @@ obvious tutorial does — both are cross-origin, which would mean widening
 `connect-src 'self'` and weakening the e2e test asserting zero off-origin
 requests. Don't take that shortcut later.
 
+**Part of the security posture is dashboard-only, not in this repo.**
+`public/_headers` is not the whole story: **Always Use HTTPS** and **HSTS**
+(`max-age=15552000; includeSubDomains`, preload deliberately off) are Cloudflare
+zone settings, and **No-Sniff** is enabled there too because `_headers` reaches
+asset responses only — never `worker/index.ts`'s. None of this survives a
+`git clone` or a move to another host. Before enabling Always Use HTTPS,
+`http://filebrix.com` answered 200, which on this site means the JavaScript that
+processes files was shipped unencrypted and could have been replaced in transit;
+the CSP is no defence, since it arrives over the same connection. See
+PRIVACY_ARCHITECTURE.md.
+
 ### Things that are silently wrong rather than loudly broken
 
 Every one of these was found by running the real thing, and none produced an
