@@ -16,15 +16,29 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Action versions are kept current deliberately, not pinned and forgotten.
+# GitHub retired the Node 20 runtime for actions and was already forcing the
+# v4 line onto Node 24, which every run reported as a warning. Each major
+# between v4 and here was read before bumping; every breaking change is
+# irrelevant to how this workflow uses them:
+#   * setup-node v5/v6 changed automatic package-manager detection and then
+#     limited it to npm — we pass `cache: npm` explicitly, so neither applies.
+#   * upload-artifact v6 and cache v5 require Actions Runner >= 2.327.1,
+#     which GitHub-hosted runners satisfy.
+#   * checkout v7 blocks fork PRs for `pull_request_target`/`workflow_run`;
+#     this workflow triggers on plain `pull_request`.
+#   * upload-artifact v7 adds an optional `archive` input we don't set.
+# All four are used with vanilla inputs, which is what makes the jump safe.
+
 jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -98,7 +112,7 @@ jobs:
 
       - name: Cache Playwright browsers
         id: pw-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ steps.pw.outputs.version }}
@@ -130,7 +144,7 @@ jobs:
 
       - name: Upload Playwright report and traces
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: |
@@ -147,9 +161,9 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -173,7 +187,7 @@ jobs:
 
       - name: Upload Lighthouse reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lighthouse-report
           path: .lighthouseci-report/
