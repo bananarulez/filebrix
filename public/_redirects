@@ -1,0 +1,43 @@
+# Permanent redirects for URLs that moved. Read by Cloudflare's static-asset
+# handling; wrangler excludes this file from the upload automatically.
+#
+# These lived in `next.config.ts`'s `redirects()` until the site moved to
+# `output: "export"`, which supports neither `redirects()` nor `headers()`.
+# Verified against a local `wrangler dev`, not assumed — a redirect that
+# silently stops working costs the ranking it exists to transfer.
+#
+# Two things to know before editing:
+#   * First match wins, so order matters. Exact paths come before the wildcard
+#     that would otherwise swallow them.
+#   * `:splat` is whatever `*` matched. Cloudflare has no `:path*` equivalent.
+#
+# Next emitted 308 for `permanent: true`; these are 301. Both transfer ranking
+# and both are permanent — 301 is the form every crawler has understood for
+# twenty years, and every one of these paths is a GET-only page, so the method
+# preservation that distinguishes 308 is irrelevant here.
+
+# /spreadsheet-tools was the Spreadsheet & Data app's URL before Parquet was
+# unified into it as Data Studio.
+/spreadsheet-tools  /data-studio  301
+
+# /data-tools was a link-list category page whose only tool was Parquet Viewer,
+# which Data Studio now handles directly. Parquet Viewer keeps its own URL.
+/data-tools  /data-studio  301
+
+# Developer Toolkit's JSON/XML/YAML sub-category: those 9 tools moved to Data
+# Studio, whose engine always powered them, so the sub-category was retired.
+/developer-tools/json  /data-studio  301
+
+# The three "-tools" Application slugs became "-studio" so every Studio's URL
+# matches its display name, the way /data-studio always did. Each pair covers
+# the Application page and every capability page under it. Individual tool URLs
+# (/pdf/merge, /convert/png-to-jpg, /geo/geojson-viewer, ...) never lived under
+# these prefixes and are unaffected.
+/pdf-tools  /pdf-studio  301
+/pdf-tools/*  /pdf-studio/:splat  301
+
+/image-tools  /image-studio  301
+/image-tools/*  /image-studio/:splat  301
+
+/geospatial-tools  /geospatial-studio  301
+/geospatial-tools/*  /geospatial-studio/:splat  301

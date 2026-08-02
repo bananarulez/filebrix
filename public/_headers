@@ -1,26 +1,56 @@
-# Headers for responses served directly by Cloudflare's static-asset handling,
-# which never reaches the Worker — so `headers()` in next.config.ts does not
-# apply to them. Confirmed against a local `wrangler dev`: an engine asset came
-# back with Cloudflare's default `Cache-Control: public, max-age=0,
-# must-revalidate` and no security headers, while an HTML page (which does go
-# through the Worker) carried the full set from next.config.ts.
+# Response headers for the whole site. Since the move to `output: "export"`
+# there is no server, so this file is the *only* place headers come from —
+# `next.config.ts`'s `headers()` is not supported in export mode and has been
+# removed rather than left there looking authoritative.
 #
-# This file is Cloudflare-specific and inert everywhere else: `next dev` and
-# `next start` serve it as an ordinary public file and keep using
-# next.config.ts's `headers()`, so the two must be kept saying the same thing.
-# Wrangler excludes `_headers` from the upload automatically.
+# Cloudflare reads this from the root of the uploaded asset directory and
+# excludes it from the upload itself. Verified against a local `wrangler dev`
+# ("Parsed N valid header rules") and by curling the deployed responses — a
+# security header that silently stops being sent is exactly the kind of
+# regression nothing else would catch.
+#
+# First match does *not* win here: Cloudflare applies every matching rule, so
+# the `/*` block below applies to everything and the later blocks add to it.
 
 /*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.basemaps.cartocdn.com; font-src 'self' data:; connect-src 'self' https://*.basemaps.cartocdn.com; worker-src 'self' blob:; frame-ancestors 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
 
+# Notes on that policy, which is the site's main technical guarantee:
+#   * `connect-src 'self'` is what makes "files never leave your device" true
+#     by construction — a bug that tried to fetch() a file's contents somewhere
+#     would be blocked by the browser itself.
+#   * `'wasm-unsafe-eval'` is required by every engine that calls
+#     WebAssembly.instantiate() (DuckDB, pdf.js). It does not grant JS eval().
+#   * `'unsafe-eval'` is deliberately absent. next.config.ts used to add it in
+#     development only; a static export ships production output exclusively.
+#   * `*.basemaps.cartocdn.com` is the one deliberate exception, for basemap
+#     tile images only. Tile requests carry z/x/y and nothing else; user
+#     geometry is handed to MapLibre as an in-memory object, never serialized
+#     into a request. See PRIVACY_ARCHITECTURE.md §1.
+
+# NOTE: /opengraph-image is deliberately absent from this file. It needs a
+# `Content-Type`, which is a *disallowed* header here — and including one
+# silently invalidates the entire rule block rather than just that line, with
+# no message beyond wrangler reporting one fewer "valid header rule". It is
+# handled by worker/index.ts via `run_worker_first` instead. If a block here
+# ever appears to do nothing, check that reported count first.
+
+# Next's own build output is content-hashed, so the filename changes whenever
+# the bytes do and a year of immutable caching can never serve a stale chunk.
+# Next sets this itself when it serves the app; in export mode nothing does,
+# and without it every visitor revalidates every chunk on every visit.
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
+
 # Self-hosted engine assets (DuckDB workers + extensions, pdf.js, MapLibre,
-# Material Icons). Mirrors ENGINE_ASSET_CACHE_HEADERS in next.config.ts: these
-# filenames aren't content-hashed, so a year + `immutable` would risk pinning a
-# stale worker or wasm after a dependency bump. A day of hard caching plus a
-# week of stale-while-revalidate is fast on repeat visits and self-healing
-# within days. The two .wasm binaries served from R2 don't appear here — they
-# never reach the asset handler, and their route sets the same value itself.
+# Material Icons). Unlike the chunks above these filenames are *not*
+# content-hashed, so a year + `immutable` would risk pinning a stale worker or
+# wasm after a dependency bump. A day of hard caching plus a week of
+# stale-while-revalidate is fast on repeat visits and self-healing within days.
+# The two .wasm binaries served from R2 aren't here — they never reach the
+# asset handler, and the Worker sets the same value on them itself.
 /duckdb/*
   Cache-Control: public, max-age=86400, stale-while-revalidate=604800
 

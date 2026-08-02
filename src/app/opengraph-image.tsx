@@ -8,6 +8,17 @@ import { ImageResponse } from "next/og";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
+/**
+ * Required by `output: "export"`, and worth understanding rather than just
+ * satisfying: it means `ImageResponse` runs at **build time** and the result
+ * is written to `out/` as a plain PNG. `next/og`'s machinery — `resvg.wasm`
+ * (1.3 MB), `yoga.wasm`, an embedded font — therefore never ships anywhere.
+ * Under the previous `@opennextjs/cloudflare` setup all of it was bundled
+ * into the deployed Worker, 603 KB gzipped of it, purely so a request could
+ * regenerate an image that never changes.
+ */
+export const dynamic = "force-static";
+
 export default function OpengraphImage() {
   return new ImageResponse(
     (

@@ -1,33 +1,60 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "filebrix",
-  "main": ".open-next/worker.js",
+  "main": "worker/index.ts",
   "compatibility_date": "2026-06-01",
-  // Required by @opennextjs/cloudflare: the Next.js server it bundles uses
-  // Node built-ins (node:path, node:buffer, ...) that workerd only exposes
-  // behind this flag.
-  "compatibility_flags": ["nodejs_compat"],
 
   "assets": {
-    "directory": ".open-next/assets",
-    "binding": "ASSETS"
+    // `next build` with `output: "export"` writes here.
+    "directory": "out",
+    "binding": "ASSETS",
+    // Serve the exported 404 page for a path that matches no asset, rather
+    // than Cloudflare's own bare 404. The Worker's fallback branch calls
+    // `env.ASSETS.fetch(request)`, which is what returns it.
+    "not_found_handling": "404-page",
+
+    /*
+     * Exactly the paths `worker/index.ts` owns. Everything else is answered by
+     * the asset handler without invoking the Worker at all, which is what
+     * keeps the site inside the free plan's request allowance.
+     *
+     * **This list is not optional once it exists.** Given an array, Cloudflare
+     * runs the Worker *only* for these paths — every other non-asset request
+     * gets `not_found_handling` instead of falling through. Adding
+     * `/opengraph-image` alone therefore silently 404'd both DuckDB routes,
+     * which had worked a minute earlier with no `run_worker_first` at all.
+     * Any new Worker-served path must be added here too.
+     *
+     * - `/duckdb/*.wasm` — the two binaries over the 25 MiB asset limit, from
+     *   R2. Deliberately *not* `/duckdb/*`: the two ~800 KB
+     *   `duckdb-browser-*.worker.js` scripts in the same directory are
+     *   ordinary assets, and routing them through the Worker would also strip
+     *   the `Cache-Control` they get from `public/_headers`, since `_headers`
+     *   applies to asset responses and not to Worker responses.
+     * - `/duckdb-ext/*` — DuckDB's extension autoload, version segment ignored.
+     * - `/opengraph-image` — Next writes it with no file extension, so
+     *   Cloudflare serves it with no `Content-Type` and `nosniff` forbids
+     *   guessing, silently breaking every link preview. `_headers` cannot fix
+     *   that: `Content-Type` is disallowed there, and including it invalidates
+     *   the *whole* rule block with no message beyond wrangler reporting one
+     *   fewer "valid header rule". If a `_headers` block seems to do nothing,
+     *   count the rules it reports before suspecting anything else.
+     */
+    "run_worker_first": ["/duckdb/*.wasm", "/duckdb-ext/*", "/opengraph-image"]
   },
 
   /*
-   * Why an R2 bucket exists at all on a site with no backend.
+   * Why an R2 bucket exists on a site with no backend.
    *
    * Cloudflare caps an individual static asset at 25 MiB (Workers Free *and*
-   * Paid — https://developers.cloudflare.com/workers/platform/limits/).
-   * DuckDB-WASM's two engine binaries are 39.4 MB and 34.2 MB, so they are the
-   * only two files in this project that cannot ship as static assets.
-   *
-   * They are served instead from this bucket through `app/duckdb/[file]/
-   * route.ts`, on **the same origin** — deliberately not from an R2 public
-   * bucket or an assets.* subdomain, either of which would be a cross-origin
-   * request and would force `connect-src 'self'` in next.config.ts to be
-   * loosened on the one site whose entire premise is that it never talks to
-   * anywhere else. `tests/e2e/privacy.spec.ts` asserts zero off-origin
-   * requests; that assertion stays true as written.
+   * Paid — `MAX_ASSET_SIZE` in wrangler's own source). DuckDB-WASM's two
+   * engine binaries are 39.4 MB and 34.2 MB, the only two files in this
+   * project over it. `public/.assetsignore` keeps them out of the upload and
+   * `worker/index.ts` serves them from here at the same URLs, on **the same
+   * origin** — deliberately not an R2 public bucket or an assets.* subdomain,
+   * either of which is cross-origin and would force `connect-src 'self'` to be
+   * loosened on the one site whose entire premise is that it never talks
+   * anywhere else.
    *
    * The bucket holds no user data and never can — only our own copy of two
    * binaries that also exist in node_modules.

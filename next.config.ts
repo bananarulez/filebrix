@@ -1,138 +1,33 @@
 import type { NextConfig } from "next";
 
-// Defense in depth for the "files never leave the browser" guarantee:
-// connect-src 'self' means even a bug that tried to fetch() a file's
-// contents somewhere would be blocked by the browser itself.
-// 'unsafe-eval' is only added in dev — React's dev-mode debugging uses
-// eval() for stack reconstruction; production React never needs it.
-// 'wasm-unsafe-eval' is needed in both — engines like DuckDB-WASM call
-// WebAssembly.instantiate(); it does not grant JS eval(), and connect-src
-// stays 'self'-only (self-hosted engine assets — see scripts/copy-duckdb-assets.mjs).
-//
-// The Geospatial engine is the one deliberate exception to connect-src
-// 'self': README.txt §17 explicitly allows fetching basemap *tile images*
-// from a third-party host, as long as no user geometry/coordinates/
-// properties are ever sent there (see engines/geospatial/map/style.ts —
-// MapLibre only ever requests tile z/x/y; all user data is added as a
-// local GeoJSON source rendered client-side, never serialized into a
-// request). img-src also needs it for the tile images themselves.
-const BASEMAP_TILE_ORIGIN = "https://*.basemaps.cartocdn.com";
-const contentSecurityPolicy = [
-  "default-src 'self'",
-  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
-  "style-src 'self' 'unsafe-inline'",
-  `img-src 'self' data: blob: ${BASEMAP_TILE_ORIGIN}`,
-  "font-src 'self' data:",
-  `connect-src 'self' ${BASEMAP_TILE_ORIGIN}`,
-  "worker-src 'self' blob:",
-  "frame-ancestors 'none'",
-].join("; ");
-
-// Self-hosted engine assets (DuckDB-WASM's .wasm/worker/extensions, pdf.js's
-// worker/cmaps/standard-fonts/wasm/icc) live under /public and are served
-// with Next's default `max-age=0` for arbitrary public files — confirmed by
-// curling a running server, not assumed — meaning the browser revalidates
-// every one of these on every single visit, even though they're multi-KB-
-// to-multi-MB binaries that only change when a dependency version bump
-// re-runs their copy script (scripts/copy-*-assets.mjs). Unlike Next's own
-// `/_next/static/*` chunks, these filenames aren't content-hashed, so a
-// full year + `immutable` would risk serving a stale worker/wasm after a
-// version bump until that cache expired. A day of hard caching plus a week
-// of stale-while-revalidate is the safer middle ground: fast on every
-// repeat visit within a session, self-healing within days if the assets
-// ever change, never stuck stale for a year.
-const ENGINE_ASSET_CACHE_HEADERS = [
-  { key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" },
-];
-
+/**
+ * This app is a **static export**. Every one of its ~119 routes is prerendered
+ * and nothing is server-rendered, so there is no runtime server at all: the
+ * build emits `out/`, which is uploaded to Cloudflare as static assets and
+ * served without invoking a Worker.
+ *
+ * That is why this file is almost empty, and the emptiness is deliberate:
+ *
+ * - **`headers()` is not supported in export mode.** The Content-Security-
+ *   Policy — the site's main technical guarantee, `connect-src 'self'` being
+ *   what makes "files never leave your device" true by construction — and the
+ *   cache policy for self-hosted engine assets both live in `public/_headers`.
+ * - **`redirects()` is not supported either.** The permanent
+ *   `/pdf-tools` → `/pdf-studio` moves and their siblings live in
+ *   `public/_redirects`.
+ * - **`rewrites()` is not supported, and wouldn't have survived deployment
+ *   anyway** — a rewrite to a `public/` file 404s on Cloudflare, since assets
+ *   are served before any code runs. DuckDB's extension autoload is handled by
+ *   `worker/index.ts` instead.
+ *
+ * Do not add `headers`, `redirects` or `rewrites` here expecting them to work.
+ * `next build` does not warn about them in export mode — it silently drops
+ * them, which is how a weakened CSP would ship unnoticed. Everything that used
+ * to be here is in those two files, and `tests/e2e/deploy-headers.spec.ts`
+ * checks the result against a real Worker.
+ */
 const nextConfig: NextConfig = {
-  async headers() {
-    return [
-      {
-        source: "/(.*)",
-        headers: [
-          { key: "Content-Security-Policy", value: contentSecurityPolicy },
-          { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-        ],
-      },
-      { source: "/pdfjs/:path*", headers: ENGINE_ASSET_CACHE_HEADERS },
-      { source: "/duckdb/:path*", headers: ENGINE_ASSET_CACHE_HEADERS },
-      { source: "/duckdb-ext-files/:path*", headers: ENGINE_ASSET_CACHE_HEADERS },
-    ];
-  },
-  /*
-   * There is deliberately no `rewrites()` here.
-   *
-   * DuckDB-WASM's extension autoload (/duckdb-ext/:version/:platform/...)
-   * used to be a rewrite to /duckdb-ext-files/:platform/..., and it does not
-   * survive deployment: on Cloudflare Workers, static assets are served
-   * before the Worker runs, so Next rewriting a path to a `public/` file
-   * inside the Worker has nothing to serve it from and 404s. Confirmed
-   * against a local `wrangler dev`, where it broke Parquet Viewer outright.
-   *
-   * It's `app/duckdb-ext/[version]/[platform]/[file]/route.ts` now, which
-   * behaves identically in `next dev`, `next start` and Workers. Prefer a
-   * route handler over a rewrite for anything that has to resolve to a
-   * static asset; `headers()` and `redirects()` are unaffected and both were
-   * verified working under the adapter.
-   */
-  async redirects() {
-    return [
-      {
-        // /spreadsheet-tools was the Spreadsheet & Data app's URL before
-        // Parquet was unified into it as Data Studio (see app/data-studio/
-        // page.tsx). Permanent so search engines transfer ranking to the
-        // new URL rather than indexing both.
-        source: "/spreadsheet-tools",
-        destination: "/data-studio",
-        permanent: true,
-      },
-      {
-        // /data-tools was a plain link-list category page whose only tool was
-        // Parquet Viewer — now that Data Studio (app/data-studio/page.tsx)
-        // handles Parquet directly, there's no separate "analytical data"
-        // category left to justify its own page. Parquet Viewer itself keeps
-        // its own URL (/tools/parquet-viewer) unaffected.
-        source: "/data-tools",
-        destination: "/data-studio",
-        permanent: true,
-      },
-      {
-        // /developer-tools/json was Developer Toolkit's JSON/XML/YAML
-        // formatting/validation/conversion sub-category page — those 9
-        // tools moved to Data Studio (their implementation was always
-        // powered by engines/spreadsheet/, never engines/developer/), so
-        // the sub-category itself was retired. Same reasoning and
-        // destination as /spreadsheet-tools and /data-tools above.
-        source: "/developer-tools/json",
-        destination: "/data-studio",
-        permanent: true,
-      },
-      /*
-       * The three "-tools" Application slugs were renamed to "-studio" so
-       * every Studio's URL matches its display name, the way /data-studio
-       * always did. Each pair below covers the Application page itself and
-       * every capability index page under it (`/pdf-tools/pages` ->
-       * `/pdf-studio/pages`); `:path*` is written as a second rule rather
-       * than relied on to also match the bare path, so the Application page
-       * can't silently stop redirecting if that matcher's zero-segment
-       * behaviour ever changes. Individual tool URLs (/pdf/merge,
-       * /convert/png-to-jpg, /geo/geojson-viewer, ...) never lived under
-       * these prefixes and are unaffected.
-       */
-      { source: "/pdf-tools", destination: "/pdf-studio", permanent: true },
-      { source: "/pdf-tools/:path*", destination: "/pdf-studio/:path*", permanent: true },
-      { source: "/image-tools", destination: "/image-studio", permanent: true },
-      { source: "/image-tools/:path*", destination: "/image-studio/:path*", permanent: true },
-      { source: "/geospatial-tools", destination: "/geospatial-studio", permanent: true },
-      {
-        source: "/geospatial-tools/:path*",
-        destination: "/geospatial-studio/:path*",
-        permanent: true,
-      },
-    ];
-  },
+  output: "export",
 };
 
 export default nextConfig;

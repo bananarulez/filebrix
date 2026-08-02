@@ -5,16 +5,16 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node scripts/seed-local-r2.mjs && wrangler dev --port 3000",
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "cf:build": "opennextjs-cloudflare build",
-    "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "cf:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "cf:preview": "next build && wrangler dev",
+    "cf:deploy": "next build && wrangler deploy",
     "cf:upload-engine-assets": "node scripts/upload-engine-assets.mjs",
-    "postinstall": "node scripts/copy-duckdb-assets.mjs && node scripts/copy-pdfjs-assets.mjs && node scripts/copy-material-icons-assets.mjs && node scripts/copy-maplibre-assets.mjs && node scripts/generate-epsg-index.mjs"
+    "postinstall": "node scripts/copy-duckdb-assets.mjs && node scripts/copy-pdfjs-assets.mjs && node scripts/copy-material-icons-assets.mjs && node scripts/copy-maplibre-assets.mjs && node scripts/generate-epsg-index.mjs",
+    "seed:local-r2": "node scripts/seed-local-r2.mjs"
   },
   "dependencies": {
     "@duckdb/duckdb-wasm": "^1.32.0",
@@ -60,7 +60,6 @@
   },
   "devDependencies": {
     "@lhci/cli": "^0.15.1",
-    "@opennextjs/cloudflare": "^1.20.2",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^7.0.0",

@@ -30,5 +30,11 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  // `out` is the static-export output. It contains copies of our own worker
+  // sources under `_next/static/media/*.ts`, stripped of the module graph that
+  // resolves their relative imports — type-checking them produces a wall of
+  // TS2307 "cannot find module" errors about code that is already known to
+  // compile. `.open-next` is gone but `.next` is excluded by the same
+  // reasoning it always was.
+  "exclude": ["node_modules", "out"]
 }

@@ -3987,3 +3987,90 @@ budget green (181.5 KB shared, 28.5 KB headroom), full Playwright suite at
 through a real browser against a local `wrangler dev`, reading its wasm from
 R2 and its extension through the new route, with zero off-origin requests and
 no console errors.
+
+## 45. The deploy that couldn't, and the architecture that was already right
+
+Entry 44 got the site deployable in principle. It wasn't: `wrangler deploy`
+uploaded all 327 assets, then refused the Worker.
+
+```
+Your Worker exceeded the size limit of 3 MiB.
+Total Upload: 17731.50 KiB / gzip: 4072.34 KiB
+```
+
+Workers Free caps a script at **3 MiB gzipped**. `@opennextjs/cloudflare`
+bundles the whole Next server, which came to 3.98 MiB. The largest single
+removable dependency was `next/og` — measured, not guessed, at **603 KiB
+gzipped** — against a ~1000 KiB gap. Shrinking couldn't reach it.
+
+### The real finding
+
+The interesting part isn't the limit, it's what the limit exposed: **4 MB of
+Next server was being deployed to serve 119 pages that are all prerendered and
+0 that aren't.** The adapter existed to run a server this app doesn't have.
+
+So the site became a static export with a hand-written Worker for the few
+paths that can't be files. That removed the 3 MiB problem and the 100k
+requests/day one at the same time — static assets never invoke a Worker at
+all — and the deployed script went from 3.98 MiB to a few KB.
+
+### Reversing an earlier decision, and why
+
+Entry 44 argued *against* static export: `next.config.ts` carried the CSP,
+the permanent redirects and the DuckDB rewrite, and hand-porting them was
+"three chances to silently weaken the security headers."
+
+Two of those three had already collapsed by then. The rewrite didn't survive
+deployment at all (entry 44), and `headers()` never reached a static asset, so
+`public/_headers` had to be written anyway. Only `redirects()` was still doing
+its job. The argument had mostly been overtaken by facts on the ground; what
+remained was the fear of hand-porting, and the answer to that is a test, not
+an adapter.
+
+| was | is now |
+| --- | --- |
+| `headers()` | `public/_headers` |
+| `redirects()` | `public/_redirects` |
+| `rewrites()` | `worker/index.ts` |
+
+### The change that should have come first
+
+**The e2e suite now runs against `wrangler dev`, not `next start`.**
+
+`next start` refuses to run in export mode, so this was forced — but it is the
+single most valuable thing in this entry. The suite now exercises the
+*deployed artifact*: `out/`, `_headers`, `_redirects`, the exported 404 page
+and `worker/`. Every deployment bug in entries 44 and 45 was invisible to a
+green 322-test run precisely because that run was against a different server.
+`tests/e2e/deploy-headers.spec.ts` adds 16 tests over the CSP, all nine
+permanent redirects, cache policy, the OG image's content type and both Worker
+paths — none of which any test could see before.
+
+### Four things that fail silently
+
+Every one was found by running the real thing; none produced an error naming
+its cause.
+
+- **`run_worker_first` as an array means the Worker runs for those paths and
+  nothing else.** Adding `/opengraph-image` to it instantly 404'd both DuckDB
+  routes, which had worked a minute earlier with no `run_worker_first` at all.
+  Other non-asset paths stop falling through and get `not_found_handling`.
+- **`Content-Type` is disallowed in `_headers`, and including it invalidates
+  the whole block** — no error, just one fewer "valid header rule" in
+  wrangler's startup line. Next writes the OG image with no file extension, so
+  Cloudflare sends no content type, and `nosniff` forbids guessing: every
+  social link preview would have been blank. It's served by the Worker now.
+- **`_headers` applies to asset responses, not Worker responses.** Moving a
+  path into the Worker silently drops its cache and security headers. Hence
+  `/duckdb/*.wasm` rather than `/duckdb/*` — the two ~800 KB worker scripts
+  beside them are ordinary assets and must stay on the asset path.
+- **`force-static` is required on `robots.ts`, `sitemap.ts` and
+  `opengraph-image.tsx`.** On the OG image it's load-bearing rather than
+  ceremonial: it means `next/og` runs at build time, so `resvg.wasm` — 1.3 MB
+  that the adapter had been shipping in the Worker to regenerate an image that
+  never changes — isn't deployed at all.
+
+**Verification:** `tsc` clean, lint clean, Vitest 790/790, clean export build
+(119 static pages, 0 dynamic), bundle budget green (181.5 KB shared), and
+**338/338 Playwright** against `wrangler dev` — the first run in this
+project's history that tested what actually ships.

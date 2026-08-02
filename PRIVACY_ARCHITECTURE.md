@@ -42,9 +42,9 @@ nothing else:
    production.** Cloudflare rejects any individual static asset over 25 MiB
    (`MAX_ASSET_SIZE` in wrangler's own source), and DuckDB-WASM's two engine
    binaries are ~39 MB and ~34 MB. They are uploaded to a private R2 bucket
-   and served back by `src/app/duckdb/[file]/route.ts` at the exact same
-   `/duckdb/*.wasm` URLs — so from the browser's point of view nothing
-   changed, and `connect-src 'self'` still covers them.
+   and served back by `worker/index.ts` at the exact same `/duckdb/*.wasm`
+   URLs — so from the browser's point of view nothing changed, and
+   `connect-src 'self'` still covers them.
 
    This was a deliberate choice over the two shorter paths. An R2 *public*
    bucket, or binding the bucket to an `assets.filebrix.com` subdomain, would
@@ -52,9 +52,9 @@ nothing else:
    cross-origin, and both would have required widening `connect-src` and
    weakening the tests that assert this site makes zero off-origin requests.
    The bucket holds nothing but our own copy of two binaries that also sit in
-   `node_modules`; it never receives user data, and the route that reads it is
-   GET-only with a two-entry allow-list, so a crafted `[file]` cannot read any
-   other key.
+   `node_modules`; it never receives user data, and the code that reads it is
+   `GET`-only with a two-entry allow-list, so a crafted filename cannot reach
+   any other key.
 3. **Basemap tile images**, for the Geospatial engine's map tools only
    (GeoJSON Viewer, GPX Viewer): raster PNG tiles from
    `*.basemaps.cartocdn.com` (free, no API key). This is the **one
@@ -83,11 +83,18 @@ was confirmed by:
   above.
 - Confirming `src/app/api/` contains no route handlers at all — there is no
   server endpoint that could receive a file even if something tried to
-  call it. The application has exactly two route handlers anywhere, both
-  outside `api/`, both `GET`-only, and neither accepts a request body:
-  `app/.well-known/security.txt/route.ts` (a static text response) and
-  `app/duckdb/[file]/route.ts` (streams one of two allow-listed engine
-  binaries out of R2 — described in §1). Neither can receive a file.
+  call it. The site is a **static export**: `next build` emits a directory of
+  files and there is no Next server anywhere in production, so there is no
+  request handler that *could* be given a body. The one route handler in the
+  app, `app/.well-known/security.txt/route.ts`, is `force-static` and is
+  emitted as a plain text file.
+- Confirming that the only server-side code that exists at all,
+  `worker/index.ts` (~120 lines), **rejects every method except `GET` and
+  `HEAD` before doing anything else**, and that its three paths
+  (`/duckdb/*.wasm` from R2, `/duckdb-ext/*` from our own assets,
+  `/opengraph-image`) each read from a fixed allow-list and none of them reads
+  a request body. There is no code path in the deployed system that accepts
+  uploaded bytes.
 - Confirming there is no `middleware.ts`.
 - Real-browser network-interception tests per engine (image, PDF,
   spreadsheet, geospatial, developer tools, and the homepage's Universal

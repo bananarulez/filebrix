@@ -89,6 +89,20 @@ export default defineConfig({
     // uncompiled route concurrently can stall past any reasonable timeout.
     // A production build serves pre-compiled routes, which is also what e2e
     // tests should be exercising anyway.
+    //
+    // `npm run start` is `wrangler dev` since the site became a static export
+    // (`next start` refuses to run in export mode at all). That's not a
+    // workaround, it's an upgrade: wrangler serves the *deployed artifact* —
+    // public/_headers, public/_redirects, the exported 404 page and worker/
+    // — so the CSP, the permanent /pdf-tools redirects and the DuckDB R2 path
+    // are now covered by the same suite as everything else. Under the previous
+    // adapter, all three were config that no test could see, and two of them
+    // shipped broken.
+    //
+    // It also seeds the local R2 simulation first: public/.assetsignore keeps
+    // the two oversized .wasm binaries out of the asset directory here exactly
+    // as in production, so the Parquet tests genuinely exercise the Worker's
+    // R2 path rather than a local file that only exists in development.
     command: "npm run build && npm run start",
     url: "http://localhost:3000",
     reuseExistingServer: !process.env.CI,

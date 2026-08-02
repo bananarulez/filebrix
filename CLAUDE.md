@@ -566,112 +566,122 @@ lint). In order:
 
 ## Deployment (Cloudflare Workers)
 
-The site deploys to Cloudflare Workers through `@opennextjs/cloudflare`
-(`wrangler.jsonc`, `open-next.config.ts`, `npm run cf:build` / `cf:preview` /
-`cf:deploy`). `NEXT_PUBLIC_SITE_URL` must be set in the build environment —
-it's baked in at build time and silently falls back to `http://localhost:3000`.
+The site is a **static export** (`output: "export"`) deployed to Cloudflare
+Workers static assets, with a small hand-written Worker (`worker/index.ts`) for
+the handful of paths that can't be plain files. `npm run cf:deploy`;
+`NEXT_PUBLIC_SITE_URL` must be set in the build environment or every canonical
+URL and sitemap entry silently points at `http://localhost:3000`.
 
-**Why the adapter rather than `output: "export"`.** Every route is prerendered,
-so a static export looks like the obvious fit — but `next.config.ts` carries
-the CSP headers and the permanent `/pdf-tools` → `/pdf-studio` redirects, and
-static export supports neither `headers()` nor `redirects()`. Both work under
-the adapter, verified against a local `wrangler dev` (a page response carries
-the full CSP; `/pdf-tools/pages` 308s to `/pdf-studio/pages`).
+**Why not `@opennextjs/cloudflare`.** It was tried, worked locally, and could
+not be deployed: bundling the Next server produced a **3.98 MiB gzipped**
+Worker against the Workers Free plan's **3 MiB script limit**. Removing
+`next/og` (the biggest single dependency, 603 KB gzipped) wouldn't have closed
+the gap. The deeper point is that it was 4 MB of server to deliver pages that
+were already static — every route prerenders and nothing is server-rendered.
+The current Worker is a few KB, and because static assets never invoke a
+Worker, the free plan's 100k-requests/day limit stopped applying too.
 
-**But `next.config.ts` is *not* authoritative for everything — two things
-don't survive deployment, and both were found by running the app against a
-real Worker rather than by reading anything.** The cause is the same in both:
-**Cloudflare serves static assets before the Worker ever runs**, so Next never
-sees those requests and has no filesystem to resolve one to.
-- **`rewrites()` to a `public/` file 404s.** The DuckDB extension autoload
-  used to be a rewrite; under Workers it broke Parquet Viewer outright — the
-  wasm loaded, then `/duckdb-ext/v1.4.3/wasm_eh/parquet.duckdb_extension.wasm`
-  404'd. It's `app/duckdb-ext/[version]/[platform]/[file]/route.ts` now, which
-  behaves the same in `next dev`, `next start` and Workers. **Prefer a route
-  handler over a rewrite for anything resolving to a static asset**; there is
-  deliberately no `rewrites()` block left in `next.config.ts`.
-- **`headers()` never reaches a static asset.** Engine assets came back with
-  Cloudflare's default `Cache-Control: public, max-age=0, must-revalidate` and
-  no security headers at all, silently discarding the caching decision that
-  config comment explains. `public/_headers` (Cloudflare's own mechanism, and
-  inert under `next dev`/`next start`) restores both. **It and
-  `ENGINE_ASSET_CACHE_HEADERS` in `next.config.ts` have to be kept saying the
-  same thing** — nothing connects them.
+**`next.config.ts` is nearly empty, deliberately.** Export mode supports
+**none** of `headers()`, `redirects()` or `rewrites()`, and `next build` does
+not warn — it silently drops them, which is how a weakened CSP would ship
+unnoticed. Their replacements:
 
-Neither failure is loud. The 404 surfaced only as "the viewer never renders a
-row", and the missing cache headers surface as nothing at all. Assume any
-`next.config.ts` behaviour that touches a static asset is broken until seen
-working against `wrangler dev`.
+| was | is now |
+| --- | --- |
+| `headers()` | `public/_headers` |
+| `redirects()` | `public/_redirects` |
+| `rewrites()` | `worker/index.ts` |
 
-**`getCloudflareContext()` throws off-Worker — it does not return an empty
-context.** Under `next dev`/`next start` it raises "has been called without
-having called `initOpenNextCloudflareForDev`", so a route written as
-`getCloudflareContext().env.X ?? fallback` never reaches its fallback and 500s
-instead. Read bindings through `lib/cloudflareBindings.ts`'s `cloudflareEnv()`,
-which catches and returns `undefined`. This is not hypothetical: the fix above
-replaced a working rewrite with a route that then 500'd under `next start`,
-failing 8 Playwright tests — the local dev path and the deployed path each
-break the other's assumption, so **both have to be run**. The adapter's own
-answer, `initOpenNextCloudflareForDev()` in `next.config.ts`, is deliberately
-not used: it starts a local Miniflare on every `npm run dev` to simulate two
-bindings that already have a perfectly good local equivalent (`public/`).
+`tests/e2e/deploy-headers.spec.ts` covers all three against a real Worker.
+
+**The e2e suite runs against `wrangler dev`, not `next start`** (which refuses
+to run in export mode at all). This is an upgrade, not a workaround: the suite
+now exercises the deployed artifact — `out/`, `_headers`, `_redirects`, the
+404 page and `worker/` — so the CSP, the permanent redirects and the R2 path
+are covered like everything else. Under the previous adapter all three were
+config no test could see, and two shipped broken. `npm run start` is
+`wrangler dev`, seeded first by `scripts/seed-local-r2.mjs`, because
+`.assetsignore` keeps the oversized binaries out of `out/` locally too — so
+Parquet tests genuinely exercise the Worker's R2 path.
 
 **Two files can't ship as static assets.** Cloudflare rejects any individual
 asset over 25 MiB (`MAX_ASSET_SIZE = 25 * 1024 * 1024`, read out of wrangler's
 own source rather than its docs). `duckdb-mvp.wasm` (~39 MB) and
 `duckdb-eh.wasm` (~34 MB) are the only ones. `public/.assetsignore` keeps them
-out of the upload and `app/duckdb/[file]/route.ts` serves them from R2 at the
-*same URLs*, so `engines/parquet/index.ts` needed no change. Serving them from
-an R2 public bucket or an `assets.` subdomain would have been less work and is
-what the obvious tutorial does — both are cross-origin, which would mean
-widening `connect-src 'self'` and weakening the e2e test asserting zero
-off-origin requests. Don't take that shortcut later.
+out of the upload and the Worker serves them from R2 at the *same URLs*, so
+`engines/parquet/index.ts` needed no change. Serving them from an R2 public
+bucket or an `assets.` subdomain would have been less work and is what the
+obvious tutorial does — both are cross-origin, which would mean widening
+`connect-src 'self'` and weakening the e2e test asserting zero off-origin
+requests. Don't take that shortcut later.
+
+### Things that are silently wrong rather than loudly broken
+
+Every one of these was found by running the real thing, and none produced an
+error message pointing at the cause.
+
+- **`run_worker_first` as an array means the Worker runs for those paths and
+  *nothing else*.** Adding `/opengraph-image` to it instantly 404'd both
+  DuckDB routes, which had worked with no `run_worker_first` at all — other
+  non-asset paths stop falling through to the Worker and get
+  `not_found_handling` instead. **Any new Worker-served path must be added to
+  that list.**
+- **`Content-Type` is a disallowed header in `_headers`, and including it
+  invalidates the entire block**, not just that line — with no message beyond
+  wrangler reporting one fewer "valid header rule". If a `_headers` block
+  appears to do nothing, count the rules it reports first. This is why
+  `/opengraph-image` (which Next writes with no file extension, so Cloudflare
+  sends no content type and `nosniff` forbids guessing) is handled in the
+  Worker.
+- **`_headers` applies to asset responses, not Worker responses.** A path
+  moved into the Worker loses its cache and security headers unless the Worker
+  sets them itself. This is why `run_worker_first` lists `/duckdb/*.wasm`
+  rather than `/duckdb/*` — the two `duckdb-browser-*.worker.js` scripts next
+  to them are ordinary assets and must stay on the asset path.
 - **`wrangler deploy --dry-run` cannot verify `.assetsignore`.** The ignore
   function runs inside `syncAssets`, at upload time; a dry run reports the same
   file count with the patterns present or absent (checked both ways). The
-  patterns are instead verified in `tests/unit/engineAssets.test.ts` against
-  the same `ignore` package wrangler itself uses, which also asserts the
-  inverse — that nothing *under* the limit is excluded, since an over-broad
-  `duckdb/*` would silently drop the two worker scripts and DuckDB would fail
-  to start with no clue why. Three things have to agree here (sizes on disk,
-  the ignore patterns, `lib/engineAssets.ts`'s allow-list) and nothing in the
-  type system connects them; that test is what connects them.
-- **In local dev the route is never reached.** `public/duckdb/` still exists on
-  disk, and Next's static file handling answers first — confirmed by curling a
-  running dev server (`206`, `Content-Range: …/34242586`, a file `Last-Modified`)
-  rather than assumed, since a route/`public` collision could plausibly resolve
-  either way.
-- **ESLint must ignore `.open-next/`.** It isn't covered by `.gitignore`
-  (ESLint doesn't read it), and linting the bundled worker exhausts Node's 4 GB
-  heap — `npm run lint` dies with "Ineffective mark-compacts near heap limit",
-  which reads like a project-wide problem rather than one unignored directory.
-- **The only R2 step that needs the dashboard is enabling R2 on the account.**
-  `wrangler login`'s `--scopes-list` shows no R2 scope at all (`d1`, `pages`,
-  `queues`, … and nothing for R2), which looks like it should mean the CLI
-  can't touch R2 — it doesn't. `wrangler r2 object put --remote` works fine
-  with the ordinary OAuth session once R2 is switched on; before that it fails
-  with `code: 10042 — Please enable R2 through the Cloudflare Dashboard`,
-  which is an *account* error, not a permissions one. Don't read a missing
-  scope as a refusal without testing it.
-- **`--remote` is not optional on `wrangler r2 object put`.** Without it
-  wrangler writes to the local simulated bucket and prints "Upload complete"
-  regardless, so a deployment can fail on a missing object that appeared to
-  upload successfully.
+  patterns are verified in `tests/unit/engineAssets.test.ts` against the same
+  `ignore` package wrangler itself uses, which also asserts the inverse — that
+  nothing *under* the limit is excluded, since an over-broad `duckdb/*` would
+  silently drop the two worker scripts and DuckDB would fail to start with no
+  clue why. Three things have to agree (sizes on disk, the ignore patterns,
+  `lib/engineAssets.ts`'s allow-list) and nothing in the type system connects
+  them; that test is what connects them.
+- **`robots.ts`, `sitemap.ts` and `opengraph-image.tsx` each need
+  `export const dynamic = "force-static"`** or the export build fails. For the
+  OG image this is load-bearing rather than ceremonial: it means `next/og`
+  runs at build time and `resvg.wasm` never ships anywhere.
+- **`tsconfig.json` must exclude `out`.** The export copies our own worker
+  sources into `out/_next/static/media/*.ts` without the module graph that
+  resolves their imports, so `tsc` fills with TS2307 errors about code already
+  known to compile.
+- **ESLint must ignore build output** for the same reason it always did —
+  linting bundled output exhausts Node's 4 GB heap and `npm run lint` dies with
+  "Ineffective mark-compacts near heap limit", which reads like a project-wide
+  problem rather than one unignored directory.
+- **The only R2 step needing the dashboard is enabling R2 on the account.**
+  `wrangler login --scopes-list` shows no R2 scope, which looks like the CLI
+  can't touch R2 — it can. Before R2 is enabled the failure is `code: 10042`,
+  an *account* error, not a permissions one. Don't read a missing scope as a
+  refusal without testing it. `--remote` is not optional on
+  `wrangler r2 object put`: without it wrangler writes to the local simulation
+  and prints "Upload complete" regardless.
 - **Never spawn `npx` from a script on Windows.** Node has refused to
-  execFile/spawn a `.cmd` without `shell: true` since 20.12 (the CVE-2024-27980
-  fix), so `execFileSync("npx.cmd", …)` dies with `EINVAL` before the tool
-  runs. `scripts/upload-engine-assets.mjs` invokes
-  `node node_modules/wrangler/bin/wrangler.js` instead — no shell, identical on
-  every platform. Its first version didn't, and its catch block *guessed* the
-  failure was a permissions problem, which sent someone looking for an API
-  token they never needed. A script's error path must report what happened,
-  not speculate about why.
-- **Cloudflare bindings are typed by hand** in `src/types/cloudflare-env.d.ts`,
-  not by `wrangler types`, which emits either an `R2Bucket` that resolves to
-  `any` (`@cloudflare/workers-types` isn't installed — a probe assigning the
-  binding to a `number` compiled cleanly) or 550 KB of workerd runtime types
-  that redefine `Request`/`Response` against the DOM lib. Add a binding there
-  when you add one to `wrangler.jsonc`. Same reasoning as `src/types/shpjs.d.ts`.
+  execFile/spawn a `.cmd` without `shell: true` since 20.12 (the
+  CVE-2024-27980 fix), so `execFileSync("npx.cmd", ...)` dies with `EINVAL`
+  before the tool runs. `scripts/*.mjs` invoke
+  `node node_modules/wrangler/bin/wrangler.js` instead. The first version of
+  `upload-engine-assets.mjs` didn't, and its catch block *guessed* the failure
+  was a permissions problem, sending someone after an API token they never
+  needed — **an error path that speculates is worse than one that just
+  reports.**
+- **Cloudflare bindings are typed by hand** in `worker/index.ts`.
+  `wrangler types` emits either types that resolve to `any` (because
+  `@cloudflare/workers-types` isn't installed — a probe assigning a binding to
+  a `number` compiled cleanly) or 550 KB of workerd runtime types that redefine
+  `Request`/`Response` against the DOM lib. Two bindings with three methods
+  aren't worth either. Same reasoning as `src/types/shpjs.d.ts`.
 
 ## Current status
 
