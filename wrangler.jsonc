@@ -4,6 +4,26 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-06-01",
 
+  /*
+   * The site is reachable only at its custom domain, filebrix.com.
+   *
+   * Both of these default to **true** when absent, and wrangler says so on
+   * every deploy ("Because 'workers_dev' is not in your Wrangler file, it will
+   * be enabled for this deployment by default"). Turning them off in the
+   * dashboard therefore doesn't stick — the next `npm run cf:deploy` switches
+   * them back on. They have to live here.
+   *
+   * Why off at all: `filebrix.adam-kulhavy.workers.dev` served byte-identical
+   * pages to `filebrix.com`, and `*-filebrix.adam-kulhavy.workers.dev` did the
+   * same for every past version. That's the whole site duplicated across two
+   * hostnames plus one per deploy. Every page's canonical tag points at
+   * filebrix.com (baked in from NEXT_PUBLIC_SITE_URL at build time), which
+   * mostly protects against it — but a canonical is a hint, and there is no
+   * reason to publish a second copy and then ask search engines to ignore it.
+   */
+  "workers_dev": false,
+  "preview_urls": false,
+
   "assets": {
     // `next build` with `output: "export"` writes here.
     "directory": "out",
