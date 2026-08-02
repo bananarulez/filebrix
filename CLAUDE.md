@@ -837,7 +837,21 @@ for different reasons (SVG needs a real `<img>` element; EXIF is a pure
 byte-parse with no benefit from a worker hop). Batch processing (drop N
 images, get individual downloads plus a combined `.zip` via `jszip`) is
 shared across all format-conversion and edit tools through one component,
-`components/image/ImageBatchList.tsx`. All 13 of those tools are unified
+`components/image/ImageBatchList.tsx`. **That component shows the *result*,
+not the file that went in** — it rendered `URL.createObjectURL(file)` until a
+user reported that applying a brightness change showed no preview at all, so
+the only way to judge an edit was to download it and open it. Nudging a value
+a few percent and looking, which is the entire workflow those tools exist for,
+was impossible without leaving the page. It now also reports
+`before → after (±N%)` per file (the whole answer Compress gives, and useful
+elsewhere: compressing a gradient PNG *grows* it 448%, which the tool warned
+about in prose that was easy to skip) and offers a "Compare with original"
+toggle, cheap because both object URLs already existed. Result URLs are
+created during processing, so the `pagehide` revoke reads them from a ref
+rather than a mount-time closure that would miss every one. One image gets a
+320px preview and a batch keeps 140px thumbnails — a thumbnail is fine for
+"that's the right file" and useless for judging a 5% change, while widening
+the grid would make a 20-file batch scroll for pages. All 13 of those tools are unified
 into **Image Studio** (`components/image/ImageStudioApp.tsx`, live at
 `/image-studio` and every individual tool's own URL) with View/Edit/Convert/
 Metadata tabs, following the same shell pattern as Data/PDF Studio. The

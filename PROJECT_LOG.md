@@ -4074,3 +4074,53 @@ its cause.
 (119 static pages, 0 dynamic), bundle budget green (181.5 KB shared), and
 **338/338 Playwright** against `wrangler dev` — the first run in this
 project's history that tested what actually ships.
+
+## 47. The image tools never showed you what they did
+
+Reported by the first person to actually use the site: applying a brightness
+change produced no preview of the result. The only way to see the effect was
+to download the file and open it — so nudging a value a few percent and
+looking, which is the entire workflow those tools exist for, meant a download
+per attempt.
+
+`ImageBatchList` rendered `URL.createObjectURL(file)` — the *input* — and on
+success replaced the status text with a Download button. The output was never
+displayed anywhere, on any image tool.
+
+Worth separating two things that looked like one problem: **re-running already
+worked.** Each Apply snapshots its settings into a new `Job` and remounts the
+list by key, so the image really was reprocessed every time. Only the feedback
+was missing, which made a working feature look broken.
+
+### What changed, all in the one shared component
+
+- **The thumbnail is the result** once processing finishes, falling back to
+  the source while a file is still in flight so the slot never flashes empty.
+- **`before → after (±N%)` per file.** For Compress that is the entire answer
+  the tool gives. It immediately made an existing oddity legible: compressing
+  a gradient PNG grows it from 22.7 KB to 124.5 KB (+448%), because the tool
+  converts to JPEG and PNG stores smooth gradients better. The page already
+  said so in prose above the button; now the number says it too.
+- **"Compare with original"** flips every preview back. Nearly free — both
+  object URLs already existed, one for the source and one now for the result.
+- **One image gets a 320px preview; a batch keeps 140px thumbnails.** A
+  thumbnail is fine for "that's the right file" and useless for judging a 5%
+  brightness change. Widening the grid instead would make a 20-file batch
+  scroll for pages.
+
+Because it lives in `ImageBatchList`, every image tool got this at once —
+conversions, all seven Edit actions, and metadata removal.
+
+### One trap worth remembering
+
+The result object URLs are created *during* processing, not at mount, so the
+existing `pagehide` revoke — which captures the preview URLs in a closure at
+mount time — could never have seen them. They go into a ref the handler reads
+at revoke time instead. The same effect already carried a long comment about
+Strict Mode revoking URLs too early (PROJECT_LOG entry 39); this is the
+mirror-image mistake, revoking too few.
+
+**Verification:** `tsc` clean, lint clean, Vitest 791/791, Playwright 340/340,
+plus the new `image-tools.spec.ts` block asserting the shown image is the
+result, that the size line is rendered, and that Compare flips both ways —
+and the two states inspected as real screenshots.

@@ -480,3 +480,49 @@ test.describe("Image Studio keeps the loaded images across tabs", () => {
     );
   });
 });
+
+test.describe("Seeing the result without downloading it", () => {
+  /*
+   * Reported after launch: applying a brightness change showed no preview of
+   * the result, so the only way to judge it was to download the file and open
+   * it — which makes the actual workflow (nudge a few percent, look, nudge
+   * again) impossible without leaving the page. `ImageBatchList` was rendering
+   * `URL.createObjectURL(file)`, the *input*, and never the output.
+   *
+   * Asserted through the `alt` text rather than by comparing pixels: the point
+   * is which image the component chose to show, and the existing pixel-level
+   * tests above already cover whether the processing itself is correct.
+   */
+  test("an edit shows the processed image, its size change, and can flip back to the original", async ({
+    page,
+  }) => {
+    await page.goto("/tools/compress-image");
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("opaque.jpg"));
+    await page.getByRole("button", { name: "Compress", exact: true }).click();
+
+    const result = page.locator('img[alt^="Result for"]');
+    await expect(result).toBeVisible({ timeout: 30_000 });
+
+    // "2.3 KB → 1.9 KB (−17%)" — before, after and the delta. For Compress
+    // this is the entire answer the tool gives; it used to be invisible.
+    await expect(page.getByText(/\d.*(KB|MB|B) → .*(KB|MB|B) \([+−]?\d+%\)/)).toBeVisible();
+
+    await page.getByRole("button", { name: "Compare with original" }).click();
+    await expect(page.locator('img[alt^="Original "]')).toBeVisible();
+    await expect(result).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Show result" }).click();
+    await expect(result).toBeVisible();
+  });
+
+  test("a batch shows every processed image, not the files that went in", async ({ page }) => {
+    await page.goto("/convert/png-to-jpg");
+    await page
+      .locator('input[type="file"]')
+      .first()
+      .setInputFiles([fixture("transparent.png"), fixture("large.png")]);
+    await page.getByRole("button", { name: "Convert", exact: true }).click();
+
+    await expect(page.locator('img[alt^="Result for"]')).toHaveCount(2, { timeout: 45_000 });
+  });
+});

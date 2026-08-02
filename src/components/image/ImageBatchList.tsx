@@ -1,18 +1,42 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ProcessingError } from "@/lib/errors/ProcessingError";
 import { sanitizeFilename } from "@/lib/security/filenames";
+import { formatBytes } from "@/lib/format/bytes";
 import { LazySendToToolLinks } from "@/components/tools/LazySendToToolLinks";
 
 interface BatchEntry {
   key: string;
   file: File;
+  /** The source image, kept after processing so "Compare with original" works. */
   previewUrl: string;
   status: "pending" | "processing" | "done" | "error";
   blob?: Blob;
+  /**
+   * The *processed* image. Until this existed the thumbnail kept showing the
+   * input, so the only way to see what an edit had actually done was to
+   * download the file and open it — which makes nudging brightness by a few
+   * percent and looking at the result, the whole point of that tool,
+   * impossible without leaving the page.
+   */
+  resultUrl?: string;
   outputFilename?: string;
   errorMessage?: string;
+}
+
+/**
+ * "1.4 MB → 380 KB (−73%)".
+ *
+ * Shown for every operation, not just Compress. It is the headline number
+ * there — the entire question that tool answers — but a resize that barely
+ * shrinks the file, or a "remove metadata" that takes 200 KB off, are both
+ * things worth seeing without opening a file manager.
+ */
+function describeSizeChange(before: number, after: number): string {
+  const percent = before === 0 ? 0 : Math.round(((after - before) / before) * 100);
+  const sign = percent > 0 ? "+" : percent < 0 ? "−" : "";
+  return `${formatBytes(before)} → ${formatBytes(after)} (${sign}${Math.abs(percent)}%)`;
 }
 
 interface ImageBatchListProps {
@@ -104,6 +128,14 @@ export function ImageBatchList({
 }: ImageBatchListProps) {
   const [entries, setEntries] = useState<BatchEntry[]>(() => createEntries(files));
   const [zipping, setZipping] = useState(false);
+  const [showOriginal, setShowOriginal] = useState(false);
+
+  /**
+   * Result object URLs, which are created while processing rather than at
+   * mount — so the `pagehide` effect below cannot capture them in its closure
+   * the way it does the previews. It reads this ref at revoke time instead.
+   */
+  const resultUrlsRef = useRef<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,9 +148,13 @@ export function ImageBatchList({
         try {
           const blob = await processFile(entry.file);
           if (cancelled) return;
+          const resultUrl = URL.createObjectURL(blob);
+          resultUrlsRef.current.push(resultUrl);
           setEntries((current) =>
             current.map((e) =>
-              e.key === entry.key ? { ...e, status: "done", blob, outputFilename: deriveFilename(entry.file) } : e
+              e.key === entry.key
+                ? { ...e, status: "done", blob, resultUrl, outputFilename: deriveFilename(entry.file) }
+                : e
             )
           );
         } catch (cause) {
@@ -158,9 +194,12 @@ export function ImageBatchList({
   // the listener is tidiness rather than a leak fix, and it can never revoke
   // a URL the component is still rendering.
   useEffect(() => {
-    const urls = entries.map((entry) => entry.previewUrl);
+    const previewUrls = entries.map((entry) => entry.previewUrl);
     const revokeAll = () => {
-      for (const url of urls) URL.revokeObjectURL(url);
+      // Result URLs are read from the ref rather than captured: they are
+      // created later, as each file finishes, so a closure taken at mount
+      // would miss every one of them.
+      for (const url of [...previewUrls, ...resultUrlsRef.current]) URL.revokeObjectURL(url);
     };
     window.addEventListener("pagehide", revokeAll);
     return () => window.removeEventListener("pagehide", revokeAll);
@@ -187,36 +226,85 @@ export function ImageBatchList({
 
   const doneCount = entries.filter((e) => e.status === "done").length;
 
+  /*
+   * One image gets a big preview; a batch keeps the thumbnail grid.
+   *
+   * A 140px thumbnail is fine for confirming "that's the right file", and
+   * useless for judging a 5% brightness change — which is exactly what the
+   * single-image case is usually for. Widening the grid instead would make a
+   * 20-file batch scroll for pages.
+   */
+  const single = entries.length === 1;
+
   return (
     <div className="flex flex-col gap-4">
-      <ul className="flex flex-wrap gap-3" aria-label="Images">
-        {entries.map((entry) => (
-          <li key={entry.key} className="flex flex-col items-center gap-1" style={{ width: 140 }}>
-            <div className="flex h-28 w-full items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={entry.previewUrl} alt={entry.file.name} className="h-full w-full object-contain" />
-            </div>
-            <span className="w-full truncate text-center text-xs text-gray-500">{entry.file.name}</span>
-            {entry.status === "pending" && <span className="text-xs text-gray-400">Waiting…</span>}
-            {entry.status === "processing" && (
-              <span className="text-xs text-gray-500" role="status">
-                Processing…
-              </span>
-            )}
-            {entry.status === "error" && (
-              <span className="text-xs text-red-600">{entry.errorMessage ?? "Failed"}</span>
-            )}
-            {entry.status === "done" && entry.blob && entry.outputFilename && (
-              <button
-                type="button"
-                onClick={() => downloadBlob(entry.outputFilename!, entry.blob!)}
-                className="rounded border border-gray-200 px-2 py-1 text-xs hover:border-gray-400 dark:border-gray-700"
+      {doneCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowOriginal((value) => !value)}
+          aria-pressed={showOriginal}
+          className="inline-flex w-fit items-center rounded-md border border-gray-200 px-3 py-1.5 text-sm hover:border-gray-400 dark:border-gray-700"
+        >
+          {showOriginal ? "Show result" : "Compare with original"}
+        </button>
+      )}
+
+      <ul className={single ? "flex" : "flex flex-wrap gap-3"} aria-label="Images">
+        {entries.map((entry) => {
+          // Falls back to the source while a file is still processing, so the
+          // slot never flashes empty mid-batch.
+          const shown = showOriginal ? entry.previewUrl : (entry.resultUrl ?? entry.previewUrl);
+          const isResult = Boolean(entry.resultUrl) && !showOriginal;
+
+          return (
+            <li
+              key={entry.key}
+              className="flex flex-col items-center gap-1"
+              style={single ? { width: "100%", maxWidth: 520 } : { width: 140 }}
+            >
+              <div
+                className={`flex w-full items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900 ${
+                  single ? "h-80" : "h-28"
+                }`}
               >
-                Download
-              </button>
-            )}
-          </li>
-        ))}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={shown}
+                  alt={
+                    isResult
+                      ? `Result for ${entry.file.name}`
+                      : `Original ${entry.file.name}`
+                  }
+                  className="h-full w-full object-contain"
+                />
+              </div>
+              <span className="w-full truncate text-center text-xs text-gray-500">{entry.file.name}</span>
+              {entry.status === "done" && entry.blob && (
+                <span className="text-xs text-gray-500" title="Original size → result size">
+                  {describeSizeChange(entry.file.size, entry.blob.size)}
+                </span>
+              )}
+              {entry.status === "pending" && <span className="text-xs text-gray-400">Waiting…</span>}
+              {entry.status === "processing" && (
+                <span className="text-xs text-gray-500" role="status">
+                  Processing…
+                </span>
+              )}
+              {entry.status === "error" && (
+                <span className="text-xs text-red-600">{entry.errorMessage ?? "Failed"}</span>
+              )}
+              {entry.status === "done" && entry.blob && entry.outputFilename && (
+                <button
+                  type="button"
+                  onClick={() => downloadBlob(entry.outputFilename!, entry.blob!)}
+                  className="rounded border border-gray-200 px-2 py-1 text-xs hover:border-gray-400 dark:border-gray-700"
+                >
+                  Download
+                </button>
+              )}
+            </li>
+          );
+        })}
       </ul>
 
       {doneCount > 1 && (
