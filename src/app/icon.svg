@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!--
+    The browser-tab icon: the same three bricks as components/layout/BrandMark.tsx.
+
+    Kept as a separate file rather than shared with that component because the
+    two cannot use the same colour mechanism. BrandMark uses `currentColor` so
+    it follows the surrounding text into dark mode; a favicon has no
+    surrounding text and must state a colour outright. If the mark ever
+    changes, change both.
+
+    The colour is Tailwind blue-600 (#2563eb), the same accent the header and
+    primary buttons use. Chosen over a theme-reactive icon because the
+    contrast against a browser's own tab strip is what matters here, not the
+    page's theme.
+  -->
+  <rect x="1.5" y="4" width="9.5" height="7" rx="1.6" fill="#2563eb"/>
+  <rect x="13" y="4" width="9.5" height="7" rx="1.6" fill="#2563eb"/>
+  <rect x="1.5" y="13" width="21" height="7" rx="1.6" fill="#2563eb"/>
+</svg>

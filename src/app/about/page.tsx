@@ -41,7 +41,8 @@ export default function AboutPage() {
           trusting a deletion policy you can&rsquo;t verify.
         </p>
         <p>
-          {SITE_NAME} does the processing on your own device instead, using the browser&rsquo;s own
+          {SITE_NAME}{" "}
+          does the processing on your own device instead, using the browser&rsquo;s own
           capabilities. Your file is read from disk into the page&rsquo;s memory, transformed there, and
           written back to your downloads folder. It never travels anywhere. This isn&rsquo;t a policy
           promise — there is no server endpoint that could receive a file even if something tried to

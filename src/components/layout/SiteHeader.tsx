@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getAppNavItems } from "@/registry/navigation";
 import { SITE_NAME } from "@/lib/seo/metadata";
+import { BrandMark } from "./BrandMark";
 
 /**
  * The primary nav is organized around Applications (Data Studio, PDF
@@ -24,7 +25,8 @@ export function SiteHeader() {
     <header className="border-b border-gray-200 dark:border-gray-800">
       <div className="mx-auto flex max-w-5xl flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center justify-between">
-          <Link href="/" className="text-lg font-semibold">
+          <Link href="/" className="flex items-center gap-2 text-lg font-semibold">
+            <BrandMark className="h-5 w-5 shrink-0 text-blue-600 dark:text-blue-400" />
             {SITE_NAME}
           </Link>
           <span className="text-xs text-gray-400 sm:hidden">No upload · Private</span>

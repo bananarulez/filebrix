@@ -55,7 +55,8 @@ export default function TermsPage() {
           These tools transform files. Conversions can be lossy, and some documents use features that
           can&rsquo;t survive a conversion — fonts, layout, embedded data or metadata may change.{" "}
           <strong>Always keep the original file</strong> and check the output before relying on it or
-          discarding the source. Do not use {SITE_NAME} as the only copy of anything you can&rsquo;t
+          discarding the source. Do not use {SITE_NAME}{" "}
+          as the only copy of anything you can&rsquo;t
           afford to lose.
         </p>
       </ContentSection>
@@ -79,7 +80,8 @@ export default function TermsPage() {
 
       <ContentSection title="Acceptable use">
         <p>
-          Don&rsquo;t use {SITE_NAME} to process material you have no right to, and don&rsquo;t attempt
+          Don&rsquo;t use {SITE_NAME}{" "}
+          to process material you have no right to, and don&rsquo;t attempt
           to attack, overload or interfere with the site or the people using it. Automated scraping or
           bulk re-hosting of the site is not permitted. Because the tools run in your browser, most
           &ldquo;abuse&rdquo; here would only affect your own device — but these terms still apply.
@@ -88,7 +90,8 @@ export default function TermsPage() {
 
       <ContentSection title="Third-party components">
         <p>
-          {SITE_NAME} is built on open-source software, and the geospatial map views display map tiles
+          {SITE_NAME}{" "}
+          is built on open-source software, and the geospatial map views display map tiles
           from a third-party provider under that provider&rsquo;s own terms, with attribution shown on
           the map. Those components remain the property of their respective owners.
         </p>

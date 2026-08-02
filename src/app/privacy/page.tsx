@@ -80,7 +80,8 @@ export default function PrivacyPage() {
           IP address — the same information any website you visit receives.
         </p>
         <p>
-          Your geometry, coordinates and file contents are <strong>never</strong> included in those
+          Your geometry, coordinates and file contents are <strong>never</strong>{" "}
+          included in those
           requests; the map is drawn on top of the tiles by your own browser. This is verified by an
           automated test that inspects every off-origin request the map tools make. Tools that
           don&rsquo;t show a map never contact the tile provider at all.

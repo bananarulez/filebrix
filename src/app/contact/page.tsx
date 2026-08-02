@@ -67,8 +67,8 @@ export default function ContactPage() {
         <p>
           The two things that make a report actionable: which tool you were using, and what kind of
           file it was. If a file failed to convert, describing it (format, rough size, where it came
-          from) is usually enough — <strong>please don&rsquo;t send the file itself</strong> unless
-          asked, and never send anything confidential. Since processing happens on your device, the
+          from) is usually enough — <strong>please don&rsquo;t send the file itself</strong>{" "}
+          unless asked, and never send anything confidential. Since processing happens on your device, the
           file never reached anyone here in the first place, and it doesn&rsquo;t need to.
         </p>
       </ContentSection>

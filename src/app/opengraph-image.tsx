@@ -35,6 +35,25 @@ export default function OpengraphImage() {
           fontFamily: "sans-serif",
         }}
       >
+        {/*
+          The same three bricks as components/layout/BrandMark.tsx and
+          app/icon.svg, built from plain divs rather than an <svg>: this is
+          rendered by Satori, which supports flexbox layout of elements far
+          more reliably than arbitrary SVG. Every div carries an explicit
+          `display: flex` because Satori requires it on any element with
+          children and errors otherwise.
+
+          Lighter blue than the header's (#60a5fa vs #2563eb) — this sits on a
+          dark slate background, where the darker blue loses too much contrast
+          at the size a link preview is actually seen.
+        */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 36 }}>
+          <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ width: 58, height: 42, borderRadius: 8, backgroundColor: "#60a5fa" }} />
+            <div style={{ width: 58, height: 42, borderRadius: 8, backgroundColor: "#60a5fa" }} />
+          </div>
+          <div style={{ width: 126, height: 42, borderRadius: 8, backgroundColor: "#60a5fa" }} />
+        </div>
         <div style={{ fontSize: 68, fontWeight: 700 }}>FileBrix</div>
         <div
           style={{
