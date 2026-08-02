@@ -18,6 +18,7 @@ import { detectFileType } from "@/lib/detect/detectFile";
 import { formatBytes } from "@/lib/format/bytes";
 import { deriveOutputFilename } from "@/lib/format/deriveOutputFilename";
 import { ProcessingError, type ProcessingErrorCode } from "@/lib/errors/ProcessingError";
+import { forgetWorkspaceFiles, recallWorkspaceFiles, rememberWorkspaceFiles } from "@/lib/workspaceFiles";
 import type { AppMode } from "@/registry/types";
 import {
   inspectWorkbook,
@@ -312,6 +313,9 @@ export function SpreadsheetDataApp({
   const [viewSortDirection, setViewSortDirection] = useState<"asc" | "desc">("asc");
 
   const gridContainerRef = useRef<HTMLDivElement | null>(null);
+  // See the recall effect below: set synchronously so a pending Universal
+  // File Drop handoff (whose drop zone mounts first) always wins.
+  const loadStartedRef = useRef(false);
 
   const dispatchRecipe = useCallback((action: Parameters<typeof recipeReducer>[1]) => {
     setRecipeState((prev) => (prev ? recipeReducer(prev, action) : prev));
@@ -424,6 +428,34 @@ export function SpreadsheetDataApp({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [mode, recipeState, handleBulkUndo, handleBulkRedo]);
 
+  /**
+   * Re-open the file the user already had loaded on the Data Studio tool page
+   * they navigated from, so moving between e.g. CSV Viewer and CSV to JSON
+   * doesn't silently discard it. Only adopted when this page can actually
+   * take it: a `lockedFormat` page inherits nothing of another format, since
+   * `handleFilesSelected` would immediately reject it with
+   * "This looks like a CSV file, not JSON" — worse than an empty drop zone.
+   */
+  useEffect(() => {
+    if (loadStartedRef.current) return;
+    const recalled = recallWorkspaceFiles("data");
+    const [file] = recalled?.files ?? [];
+    if (!file) return;
+    if (lockedFormat && recalled?.formats[0] !== lockedFormat) return;
+    let cancelled = false;
+    // Deferred for the same reason as PdfWorkspace's recall — see that file.
+    queueMicrotask(() => {
+      if (cancelled || loadStartedRef.current) return;
+      void handleFilesSelected([file]);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Runs once per mount: adoption is a "what was already open when this
+    // page loaded" question, not something to redo when props change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const isBusy =
     state.status === "opening-file" ||
     state.status === "reading" ||
@@ -503,6 +535,7 @@ export function SpreadsheetDataApp({
   async function handleFilesSelected(files: File[]) {
     const [selected] = files;
     if (!selected) return;
+    loadStartedRef.current = true;
 
     await closeParquetSession();
     setFile(selected);
@@ -548,6 +581,10 @@ export function SpreadsheetDataApp({
       }
     }
     setFormat(fmt);
+    // Remembered with its detected format so the next Data Studio tool page
+    // can decide synchronously whether it's allowed to adopt it — a page
+    // locked to JSON must not inherit a CSV and greet the user with an error.
+    rememberWorkspaceFiles("data", [selected], [fmt]);
 
     if (fmt === "parquet") {
       await loadParquet(selected);
@@ -588,6 +625,7 @@ export function SpreadsheetDataApp({
   }
 
   function handleClear() {
+    forgetWorkspaceFiles("data");
     void closeParquetSession();
     setFile(null);
     setFormat(lockedFormat ?? null);

@@ -43,6 +43,8 @@ import { imageMetadataViewerTool } from "./tools/image-metadata-viewer";
 import { geojsonViewerTool } from "./tools/geojson-viewer";
 import { geojsonValidatorTool } from "./tools/geojson-validator";
 import { kmlToGeojsonTool } from "./tools/kml-to-geojson";
+import { shapefileToGeojsonTool } from "./tools/shapefile-to-geojson";
+import { topojsonToGeojsonTool } from "./tools/topojson-to-geojson";
 import { geojsonToKmlTool } from "./tools/geojson-to-kml";
 import { gpxViewerTool } from "./tools/gpx-viewer";
 import { gpxToGeojsonTool } from "./tools/gpx-to-geojson";
@@ -55,6 +57,11 @@ import { crsConverterTool } from "./tools/crs-converter";
 import { geojsonBufferTool } from "./tools/geojson-buffer";
 import { geojsonDissolveTool } from "./tools/geojson-dissolve";
 import { geojsonStatisticsTool } from "./tools/geojson-statistics";
+import { geojsonBoundingBoxTool } from "./tools/geojson-bounding-box";
+import { geojsonCentroidTool } from "./tools/geojson-centroid";
+import { geojsonConvexHullTool } from "./tools/geojson-convex-hull";
+import { utmZoneFinderTool } from "./tools/utm-zone-finder";
+import { mapTileCalculatorTool } from "./tools/map-tile-calculator";
 import { jsonValidatorTool } from "./tools/json-validator";
 import { base64EncodeTool } from "./tools/base64-encode";
 import { base64DecodeTool } from "./tools/base64-decode";
@@ -131,6 +138,8 @@ export const tools: ToolDefinition[] = [
   geojsonViewerTool,
   geojsonValidatorTool,
   kmlToGeojsonTool,
+  shapefileToGeojsonTool,
+  topojsonToGeojsonTool,
   geojsonToKmlTool,
   gpxViewerTool,
   gpxToGeojsonTool,
@@ -143,6 +152,11 @@ export const tools: ToolDefinition[] = [
   geojsonBufferTool,
   geojsonDissolveTool,
   geojsonStatisticsTool,
+  geojsonBoundingBoxTool,
+  geojsonCentroidTool,
+  geojsonConvexHullTool,
+  utmZoneFinderTool,
+  mapTileCalculatorTool,
   jsonValidatorTool,
   base64EncodeTool,
   base64DecodeTool,
@@ -223,12 +237,32 @@ export function searchTools(
   query: string,
   toolList: ToolDefinition[] = tools
 ): ToolDefinition[] {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) return [];
-  return toolList.filter(
-    (tool) =>
-      tool.name.toLowerCase().includes(normalized) ||
-      tool.description.toLowerCase().includes(normalized) ||
-      tool.keywords.some((keyword) => keyword.toLowerCase().includes(normalized))
+  const terms = searchTerms(query);
+  if (terms.length === 0) return [];
+  return toolList.filter((tool) =>
+    matchesAllTerms(terms, [tool.name, tool.description, ...tool.keywords])
   );
+}
+
+/**
+ * Splits a query into whitespace-separated terms.
+ *
+ * Search used to test the *whole* query as one substring, so any multi-word
+ * query failed unless that exact phrase appeared verbatim: "view pdf" matched
+ * nothing, even though PDF Studio has a View capability, because no single
+ * string contains "view pdf". Real users type more than one word.
+ */
+export function searchTerms(query: string): string[] {
+  return query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/**
+ * True when *every* term appears somewhere in the haystack — AND, not OR, so
+ * adding a word narrows the results rather than flooding them. Terms may
+ * match different fields ("csv excel" finds CSV to Excel via its name; "pdf
+ * view" finds PDF Studio via its name and a capability label).
+ */
+export function matchesAllTerms(terms: string[], haystack: string[]): boolean {
+  const text = haystack.join(" ").toLowerCase();
+  return terms.every((term) => text.includes(term));
 }

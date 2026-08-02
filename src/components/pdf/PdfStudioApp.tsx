@@ -113,7 +113,7 @@ export function PdfStudioApp(props: PdfStudioAppProps) {
 }
 
 function PdfStudioBody({
-  initialTab = "pages",
+  initialTab = "view",
   lockedPagesAction,
   lockedMetadataMode,
   lockedConvertTool,

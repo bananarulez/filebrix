@@ -86,6 +86,17 @@ function matchTextContent(text: string): FileFormat | null {
 }
 
 function matchJsonShape(value: unknown): FileFormat {
+  // TopoJSON before GeoJSON: both are JSON objects with a `type`, but only
+  // TopoJSON's is "Topology", and its geometry lives in `objects`/`arcs`
+  // rather than in `features`.
+  if (
+    value &&
+    typeof value === "object" &&
+    (value as { type?: unknown }).type === "Topology" &&
+    "objects" in value
+  ) {
+    return "topojson";
+  }
   if (
     value &&
     typeof value === "object" &&

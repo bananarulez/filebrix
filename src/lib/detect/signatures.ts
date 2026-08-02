@@ -54,6 +54,24 @@ export const BINARY_SIGNATURES: BinarySignature[] = [
       bytesEqual(head, 0, [0x50, 0x4b, 0x03, 0x04]) &&
       asciiAt(head, 0, head.length).includes("opendocument"),
   },
+  // A zipped Esri Shapefile. Listed *after* xlsx/ods because all three are
+  // zip containers and those two are matched by their own well-known
+  // entries — this one falls through to the generic case of "a zip that
+  // contains a .shp member near the start". Same first-chunk heuristic, and
+  // the same reasoning: the shapefile reader itself does the authoritative
+  // validation when it actually opens the archive.
+  {
+    // KMZ: a zip whose first chunk names a .kml member. Same heuristic and
+    // same ordering rationale as the shapefile entry below it.
+    format: "kmz",
+    matches: (head) =>
+      bytesEqual(head, 0, [0x50, 0x4b, 0x03, 0x04]) && asciiAt(head, 0, head.length).includes(".kml"),
+  },
+  {
+    format: "shapefile",
+    matches: (head) =>
+      bytesEqual(head, 0, [0x50, 0x4b, 0x03, 0x04]) && asciiAt(head, 0, head.length).includes(".shp"),
+  },
   // Parquet files start (and end) with the ASCII magic "PAR1". Checking the
   // header is enough for this quick client-side sniff — the Parquet Viewer
   // itself does the authoritative validation (including the footer) when
@@ -73,6 +91,7 @@ export const EXTENSION_MAP: Record<string, FileFormat> = {
   yaml: "yaml",
   yml: "yaml",
   parquet: "parquet",
+  topojson: "topojson",
   arrow: "arrow",
   pdf: "pdf",
   txt: "txt",
@@ -89,6 +108,7 @@ export const EXTENSION_MAP: Record<string, FileFormat> = {
   gif: "gif",
   heic: "heic",
   kml: "kml",
+  kmz: "kmz",
   gpx: "gpx",
   shp: "shapefile",
   sql: "sql",

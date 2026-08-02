@@ -83,6 +83,35 @@ export function buildWebsiteJsonLd(siteName: string, siteUrl: string) {
   };
 }
 
+/**
+ * Identifies who is responsible for the site — the entity-level counterpart
+ * to the per-page `SoftwareApplication`/`FAQPage` blocks.
+ *
+ * Emitted once, on the homepage. Without it the site published plenty of
+ * structured data about its *tools* and none about its *publisher*, which is
+ * the signal search engines use to connect a domain to a known, accountable
+ * party. `sameAs` is built from whatever profile links are actually
+ * configured, so it never asserts a profile that doesn't exist.
+ */
+export function buildOrganizationJsonLd(options: {
+  name: string;
+  url: string;
+  legalName?: string | null;
+  email?: string | null;
+  sameAs?: string[];
+}) {
+  const { name, url, legalName, email, sameAs } = options;
+  return {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name,
+    url,
+    ...(legalName ? { legalName } : {}),
+    ...(email ? { email } : {}),
+    ...(sameAs && sameAs.length > 0 ? { sameAs } : {}),
+  };
+}
+
 export interface BreadcrumbEntry {
   name: string;
   url: string;

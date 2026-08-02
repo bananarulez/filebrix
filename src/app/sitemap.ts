@@ -32,11 +32,21 @@ export default function sitemap(): MetadataRoute.Sitemap {
     })),
   ];
 
+  // About/Contact/Privacy/Terms. Low priority — they're trust and compliance
+  // pages, not search targets — but indexed on purpose: "who runs this site"
+  // is exactly what a search engine looks for when judging whether a tool
+  // that handles people's documents is accountable.
+  const contentRoutes: MetadataRoute.Sitemap = ["/about", "/contact", "/privacy", "/terms"].map((path) => ({
+    url: `${SITE_URL}${path}`,
+    changeFrequency: "yearly" as const,
+    priority: 0.3,
+  }));
+
   const toolRoutes: MetadataRoute.Sitemap = tools.map((tool) => ({
     url: `${SITE_URL}${getToolUrl(tool)}`,
     changeFrequency: "monthly" as const,
     priority: 0.8,
   }));
 
-  return [...staticRoutes, ...toolRoutes];
+  return [...staticRoutes, ...contentRoutes, ...toolRoutes];
 }

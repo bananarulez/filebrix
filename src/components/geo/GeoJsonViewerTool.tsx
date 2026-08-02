@@ -67,6 +67,7 @@ export function GeoJsonViewerTool({ acceptKml = false }: GeoJsonViewerToolProps)
   const [summary, setSummary] = useState<GeoJsonSummary | null>(null);
   const [error, setError] = useState<ToolError | null>(null);
   const [selectedFeatureIndex, setSelectedFeatureIndex] = useState<number | null>(null);
+  const [filterText, setFilterText] = useState("");
 
   /**
    * `acceptKml` used to decide which parser ran; the workspace now detects
@@ -112,16 +113,43 @@ export function GeoJsonViewerTool({ acceptKml = false }: GeoJsonViewerToolProps)
     [summary]
   );
 
-  const tableRows = useMemo(
+  /**
+   * Every feature rendered as its table row, paired with the index it has in
+   * the *unfiltered* list.
+   *
+   * That pairing is the load-bearing part: map highlighting addresses a
+   * feature by its position in `features`, so filtering the table without
+   * carrying the original index would highlight the wrong shape — silently,
+   * and only once a filter is active.
+   */
+  const allRows = useMemo(
     () =>
-      features.map((feature) => [
-        geometryTypeLabel(feature),
-        ...(summary?.propertyKeys ?? []).map((key) =>
-          formatCell(asRecord(asRecord(feature)?.properties)?.[key])
-        ),
-      ]),
+      features.map((feature, index) => ({
+        index,
+        cells: [
+          geometryTypeLabel(feature),
+          ...(summary?.propertyKeys ?? []).map((key) =>
+            formatCell(asRecord(asRecord(feature)?.properties)?.[key])
+          ),
+        ],
+      })),
     [features, summary]
   );
+
+  const visibleRows = useMemo(() => {
+    const term = filterText.trim().toLowerCase();
+    if (!term) return allRows;
+    // Matches any cell, including the geometry-type column, so "polygon"
+    // filters by shape and "Prague" filters by attribute with one control.
+    return allRows.filter((row) => row.cells.some((cell) => String(cell).toLowerCase().includes(term)));
+  }, [allRows, filterText]);
+
+  /** Where the selected feature sits *in the filtered view*, or undefined if the filter hides it. */
+  const selectedVisibleIndex = useMemo(() => {
+    if (selectedFeatureIndex === null) return undefined;
+    const position = visibleRows.findIndex((row) => row.index === selectedFeatureIndex);
+    return position === -1 ? undefined : position;
+  }, [visibleRows, selectedFeatureIndex]);
 
   const selectedDetail =
     selectedFeatureIndex === null ? null : describeSelectedFeature(features[selectedFeatureIndex]);
@@ -194,11 +222,32 @@ export function GeoJsonViewerTool({ acceptKml = false }: GeoJsonViewerToolProps)
               <h3 className="text-sm font-medium">
                 Features ({features.length.toLocaleString()}) — click a row to highlight it on the map
               </h3>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="font-medium">Filter features</span>
+                <input
+                  type="search"
+                  value={filterText}
+                  onChange={(event) => setFilterText(event.target.value)}
+                  placeholder="Match any attribute or geometry type…"
+                  className="w-full max-w-md rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
+                />
+              </label>
+              {filterText.trim() !== "" && (
+                <p className="text-xs text-gray-500" role="status">
+                  Showing {visibleRows.length.toLocaleString()} of {features.length.toLocaleString()} features.
+                  {selectedFeatureIndex !== null && selectedVisibleIndex === undefined
+                    ? " The highlighted feature is hidden by this filter."
+                    : ""}
+                </p>
+              )}
               <VirtualizedTable
                 columns={tableColumns}
-                rows={tableRows}
-                onRowClick={setSelectedFeatureIndex}
-                selectedRowIndex={selectedFeatureIndex}
+                rows={visibleRows.map((row) => row.cells)}
+                // Rows are addressed by their position in the filtered view,
+                // so translate back to the real feature index before telling
+                // the map what to highlight.
+                onRowClick={(position) => setSelectedFeatureIndex(visibleRows[position]?.index ?? null)}
+                selectedRowIndex={selectedVisibleIndex}
               />
             </div>
           )}

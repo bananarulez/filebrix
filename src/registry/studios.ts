@@ -137,7 +137,10 @@ export const STUDIOS: StudioDefinition[] = [
           "Inspect or strip a PDF's title, author, creation date and producer metadata locally in your browser, before you share the file.",
       },
     ],
-    defaultAction: "pages",
+    // View, not Pages: landing on a page-manipulation workspace asks the user
+    // to commit to an operation before they've seen the document. Every other
+    // Studio opens on its viewer for the same reason.
+    defaultAction: "view",
     relatedEngines: ["pdf"],
     faq: [
       {

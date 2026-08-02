@@ -7,8 +7,9 @@ import { AdSlot } from "@/components/tools/AdSlot";
 import { StructuredData } from "@/components/seo/StructuredData";
 import { getAppNavItems } from "@/registry/navigation";
 import { buildHomeMetadata, SITE_NAME, SITE_URL } from "@/lib/seo/metadata";
-import { buildWebsiteJsonLd } from "@/lib/seo/structuredData";
+import { buildOrganizationJsonLd, buildWebsiteJsonLd } from "@/lib/seo/structuredData";
 import { PageContainer } from "@/components/layout/PageContainer";
+import { SITE_CONFIG, socialProfileUrls } from "@/config/site";
 
 export const metadata: Metadata = buildHomeMetadata();
 
@@ -18,6 +19,17 @@ export default function HomePage() {
   return (
     <PageContainer className="gap-12 py-16">
       <StructuredData data={buildWebsiteJsonLd(SITE_NAME, SITE_URL)} />
+      {/* Emitted once, here: it describes the publisher of the whole site,
+          not this page. See buildOrganizationJsonLd for why it matters. */}
+      <StructuredData
+        data={buildOrganizationJsonLd({
+          name: SITE_NAME,
+          url: SITE_URL,
+          legalName: SITE_CONFIG.operator.legalName ?? SITE_CONFIG.operator.name,
+          email: SITE_CONFIG.contact.general.email,
+          sameAs: socialProfileUrls(),
+        })}
+      />
 
       <header className="flex flex-col items-center gap-4 text-center">
         <LocalProcessingBadge />

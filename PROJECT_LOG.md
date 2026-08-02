@@ -3433,3 +3433,412 @@ revoke one the component is still rendering.
 **Verification:** `tsc --noEmit` clean, lint clean, Vitest 752/752 (97 files),
 clean production build, bundle budget green (shared 181.5 KB of 210 KB), full
 Playwright suite 296/296 at `workers: 1`.
+
+---
+
+## 40. Files follow you between tool URLs, PDF Studio opens on the document, and search understands two words
+
+Acting on the architecture review in entry 39's successor discussion, plus two
+direct reports. One proposal was **rejected on evidence** before any code was
+written, and one accepted proposal was **implemented differently** than I first
+recommended — both recorded below, since that reasoning is the part that gets
+lost.
+
+### The proposal that was already built
+
+The review proposed introducing per-tool route wrappers (`/csv-viewer`,
+`/csv-to-json`, …) that render the shared Studio component with SEO metadata,
+because "all of those live behind a single `/data-studio` page."
+
+That premise was false, and checking it took ten minutes against a running
+production build: 106 URLs in `sitemap.xml`, every tool with its own title,
+canonical, `SoftwareApplication` + `FAQPage` + `BreadcrumbList` JSON-LD, and
+`app/tools/csv-viewer/page.tsx` already rendering
+`<SpreadsheetDataApp initialMode="view" lockedFormat="csv" />` — literally the
+proposed snippet. Building it again would have been pure churn; adopting the
+flat URLs in the proposal would additionally have orphaned the 14 capability
+index pages and 301'd all 106 indexed URLs for nothing.
+
+**Recorded because the failure mode is generic:** an architecture proposal
+that describes a problem the codebase doesn't have is worth verifying before
+it's worth designing for.
+
+### Files now survive navigation between tool URLs
+
+The one genuine gap the review pointed at. Measured first: switching tabs kept
+the loaded file (React state on one page), while a client-side navigation to
+another tool URL discarded it, because every tool page has its own route and
+unmounting it dropped the workspace.
+
+`lib/workspaceFiles.ts` is a module-scoped, per-tab, in-memory map keyed by
+engine. Each Studio remembers on load, forgets on Clear, and recalls on mount.
+
+**I recommended a route-group layout and then didn't build one.** App Router
+layouts do persist across client-side navigation, but `/tools/*` and
+`/convert/*` each host tools from three different engines, so a group per
+Studio meant scattering those directories across four groups — and navigating
+*between* groups remounts the layout anyway, so it wouldn't even have covered
+the case it was chosen for. A module-scoped variable is indifferent to route
+structure and is the mechanism `lib/fileHandoff.ts` already proves works.
+
+Four details that are load-bearing:
+
+- **Recall is deferred a microtask.** Calling the load inline in the effect
+  sets state during commit, which `react-hooks/set-state-in-effect` rightly
+  rejects; the rule traces through the `loadFiles` callback, so moving the call
+  behind an indirection wasn't enough.
+- **A `loadStartedRef` makes the Universal File Drop handoff win.**
+  `FileDropZone` claims a pending file in a child effect and children mount
+  first, so the provider's recall sees the ref already set and stands down. A
+  file the user explicitly chose beats one carried over.
+- **Detected formats travel with the files**, so a destination refuses
+  synchronously. Without it, `/convert/json-to-csv` would adopt a carried-over
+  CSV and greet the user with "This looks like a CSV file, not JSON" — worse
+  than the empty drop zone they get instead. Verified as a negative test.
+- **Recall peeks, it doesn't consume** — unlike `takePendingFile`. A one-shot
+  read would mean only the first navigation kept the file.
+
+A hard reload still starts empty, and PRIVACY_ARCHITECTURE.md §3 now states
+this widened lifetime explicitly rather than leaving it implied.
+
+**A stale dev server cost real time here.** The first end-to-end check reported
+the feature not working at all; the server had been started before
+`workspaceFiles.ts` existed and Fast Refresh hadn't picked up the new module.
+Restarting it showed the feature working on the first try. Worth remembering
+before debugging code that looks correct.
+
+### PDF Studio opens on View
+
+`defaultAction` was `pages`, so `/pdf-studio` landed on Merge — asking the user
+to commit to a page operation before they'd seen the document. Every other
+Studio opens on its viewer.
+
+### Search understands more than one word
+
+Reported: "view pdf" found nothing. `searchSite` tested the **whole query** as
+a single substring, so any multi-word query failed unless that exact phrase
+appeared verbatim — and no string contains "view pdf". Now split into terms and
+matched AND-wise (`searchTerms`/`matchesAllTerms`), with an Application's
+haystack being its name + capability labels + accepted formats, so terms can be
+satisfied by different fields. "view pdf", "pdf viewer" and "pdf view" all reach
+PDF Studio; "csv excel" narrows to Data Studio and CSV to Excel.
+
+Descriptions are deliberately **out** of that haystack: they're prose listing
+verbs ("merge, split, rotate…"), and matching them would promise capabilities
+with no tool behind them.
+
+### Cannibalization audit: measured, then guarded instead of rewritten
+
+All 82 tools have a **unique name and description**, and none has an empty FAQ —
+the signals that actually differentiate near-identical pages are healthy. 12 FAQ
+*entries* are shared across tools (one across 10), and they were left alone on
+purpose: "Is my text sent anywhere?" has the same true answer everywhere, and
+rewriting it ten ways to look unique would make the copy worse without making
+the pages more distinct.
+
+The audit is now a standing check in `registryIntegrity.test.ts` (unique
+name/description, non-empty FAQ), which is worth more than a one-time pass.
+
+### Deferred
+
+**Collapsing the `locked*` props into one object** (57 call sites, 9 prop
+names) was proposed and is not in this entry. Two reasons: it's a pure
+refactor with no user-visible effect, and it isn't actually uniform across the
+four Studios — Data Studio's `lockedFormat` is a different axis from the
+per-tab action locks, so it needs a designed API rather than a rename. Landing
+~40 mechanical file edits alongside a behavioural change would also have made
+both harder to review.
+
+**Verification:** `tsc --noEmit` clean, lint clean, Vitest 764/764, clean
+production build, bundle budget green, full Playwright suite at `workers: 1`.
+
+---
+
+## 41. The pages a stranger looks for before trusting a file tool
+
+Pre-launch review of a proposed About / Contact / footer / legal set. Four
+pages shipped, seven were argued against and not built, and one launch
+blocker was raised that the proposal didn't mention.
+
+### The premise, again, was partly already true
+
+The proposal opened with "I want a global footer that appears on every page."
+There has been one since the navigation pass — `SiteFooter` renders in the
+root layout with the five Applications and the local-processing line. So the
+work was adding a second row, not building a footer. Checking first turned a
+new component into four lines of JSX.
+
+### One config file, because the alternative is being asked to change an email
+
+`src/config/site.ts` holds every human-specific value: operator name and
+country, three contact addresses, social links, the legal "last updated"
+date, and an `advertising` mode. The four new pages, the footer, the
+`Organization` JSON-LD and `/.well-known/security.txt` all read from it.
+
+Two decisions worth keeping:
+
+- **`null` renders nothing.** A channel with no address, or a social profile
+  that doesn't exist, disappears rather than shipping a dead link — and
+  `sameAs` never asserts a profile that isn't real, which would be a bad
+  structured-data signal.
+- **Placeholders are reported, not enforced.** The shipped values are
+  obviously fake (`example.com`, "Your Name") so nothing pretends to be real
+  identity. `pendingSiteConfigPlaceholders()` lists what's outstanding and
+  the unit test *prints* it. Failing on it would be wrong: placeholders are
+  the correct state during development, and a test that always fails is a
+  test people learn to ignore.
+
+### What shipped
+
+About, Contact, Privacy, Terms — all `ProseContainer` reading pages via a new
+`ContentPageLayout`, all in the sitemap, all reachable from every page
+through the footer's new second row. Plus `Organization` structured data on
+the homepage (the site published plenty of markup about its *tools* and none
+about its *publisher*) and `/.well-known/security.txt` as a route handler, so
+its `Expires` field — required by RFC 9116 — is regenerated at build time
+instead of rotting in a checked-in file.
+
+**The Privacy page is the one that matters.** Every claim on it was checked
+against the code first: no cookies anywhere, no `localStorage`/
+`sessionStorage`/IndexedDB, an analytics module whose only provider writes to
+`console.debug`, and no server endpoint that can receive a file. It names the
+one exception (CARTO map tiles) and tells the reader how to verify the whole
+thing with their own Network tab. `site-pages.spec.ts` re-checks the
+load-bearing claims in a real browser — it reads the cookie jar and both web
+storages and fails if anything appears — because a policy that drifts from
+the code is worse than no policy, and here it is also the product's main
+differentiator.
+
+`SITE_CONFIG.advertising` drives the third-party section, so turning an ad
+network on cannot silently leave the page claiming no third-party script runs.
+
+### Argued against, and not built
+
+Status, API, Careers, Press, Community, Roadmap, and a separate Changelog.
+
+The proposal framed this as "a serious SaaS application," and that template is
+what makes those pages look mandatory. This isn't one: no account, no backend,
+no data to lose, and `src/app/api` is required to stay empty. A Status page
+for a client-side app is theatre — nothing can be down except static hosting.
+An API page advertises a server the architecture exists to not have. Careers
+and Community pages with nothing behind them are negative trust signals, not
+neutral ones. Each would have been a confident footer link to an empty
+promise.
+
+The eight-way contact taxonomy was cut to three (general, bugs, security) for
+the same reason: labelled inboxes for volume nobody has measured read as
+theatre and multiply what has to be monitored.
+
+**Contact is email + GitHub issues, not a form.** A form needs somewhere to
+POST — either a server endpoint this project deliberately doesn't have, or a
+third-party form service, which means new off-origin JavaScript and a CSP
+change on a site whose entire pitch is having neither.
+
+### The blocker that wasn't in the proposal
+
+Advertising. The differentiation is "files never leave your device," backed by
+e2e tests asserting **zero off-origin requests**. Wiring AdSense means
+third-party tracking JavaScript, a looser CSP across four directives, a
+certified consent banner for EEA/UK visitors, and those privacy tests failing
+— correctly, because the claim would have changed.
+
+The recommendation on record is a contextual, non-tracking network instead:
+lower revenue, no consent banner, and consistent with the only thing that
+makes this project distinctive. `SITE_CONFIG.advertising` encodes the decision
+so the Privacy page follows it automatically. This is a product decision, left
+to the owner — but it belongs *before* launch, not after indexing.
+
+Also verified while reviewing: the CARTO/OpenStreetMap basemap attribution is
+correctly wired on the tile source. Missing map attribution is a genuine
+licensing violation and a classic pre-launch blocker; this one was already
+fine.
+
+### A test-writing note
+
+`getByText(/sets no cookies/i)` failed against a sentence that renders as
+`FileBrix<!-- --> sets no cookies` — an interpolated site name makes React
+emit a comment node mid-phrase, and the text engine sees two nodes rather than
+one. Scoping to the section and using `toContainText` (substring over
+`textContent`) is robust to that, and worth reaching for whenever an assertion
+spans a JSX interpolation.
+
+**Verification:** `tsc --noEmit` clean, lint clean, Vitest 769/769 (99 files),
+clean production build, bundle budget green, full Playwright suite at
+`workers: 1`.
+
+---
+
+## 42. Shapefile and TopoJSON, without a second projection engine
+
+Two new input formats for the Geospatial engine, chosen from a longer list
+after costing each one. Both are read-only, both normalize to GeoJSON on the
+way in, and neither changed a single engine op.
+
+### Verified before anything was built
+
+The claim that mattered wasn't "shpjs parses a shapefile" — it was "shpjs puts
+the shape in the right place on Earth". Shapefiles are usually authored in a
+projected national grid, so a reader that ignores the `.prj` sidecar produces
+perfectly valid-looking GeoJSON containing metres instead of degrees.
+
+`scripts/generate-shapefile-fixtures.py` (pyshp — an independent
+implementation, same reasoning as the reportlab/qpdf PDF fixtures) writes a
+square around Prague in EPSG:5514 at roughly (-743000, -1044000). Run through
+`shpjs` before any UI existed, it came back at **(14.4086, 50.0684)** with its
+`.dbf` attributes intact. That is the whole feature working, and it was
+established in about ten minutes of probing rather than after a day of wiring.
+
+`tests/unit/geoShapefile.test.ts` pins it as a coordinate *range check*, not a
+"geometry exists" assertion — the same lesson as entry 27, where a silently
+unchanged file still passed a "did a download appear?" test.
+
+### Why these two, and not the rest of the list
+
+The prompt came from another GIS site's import dialog offering Shapefile,
+GeoJSON, TopoJSON, GeoPackage, FlatGeobuf, GeoParquet, GeoTIFF, KML and CSV.
+Real npm figures decided it:
+
+| Format | Package | Unpacked | Verdict |
+| --- | --- | --- | --- |
+| TopoJSON | `topojson-client` | 68 KB | shipped |
+| Shapefile | `shpjs` | 677 KB | shipped |
+| FlatGeobuf | `flatgeobuf` | 1.3 MB | later |
+| GeoTIFF | `geotiff` | 3.8 MB | **no** |
+| GeoPackage | `@ngageoint/geopackage` | 13.2 MB | **no** |
+
+**GeoTIFF was refused on architecture, not size.** This engine is entirely
+vector: turf operations, feature lists, property tables, a topology validator.
+A raster has no features, no properties and no geometry to operate on, so
+supporting it means a second parallel pipeline plus raster overlay rendering —
+and would leave most of the 17 geo tools showing "not available for this file".
+That is precisely the structural change the request asked to avoid.
+**GeoPackage** was refused on weight and on needing a multi-layer picker UI
+that doesn't exist.
+
+**Shapefile turned out to be the cheapest of the two to justify**, because
+`shpjs` depends on **proj4 — already a dependency** for the CRS converter. So
+reprojection came from a library already vetted, pinned and tested against
+published landmark coordinates, rather than from a second projection engine.
+
+### Scope decisions worth keeping
+
+- **Zipped shapefiles only.** A `.shp` alone has no attributes and no
+  projection. Accepting only `.zip` is how they're actually distributed and
+  needed no change to the Studio's single-file drop zone. Loose multi-file
+  selection would have changed `GeoWorkspace.loadFile`'s signature.
+- **Read-only, and the FAQs say why.** Writing a shapefile means four files,
+  fixed-width DBF columns and a 10-character field-name limit that would
+  quietly truncate property names; writing TopoJSON means constructing a
+  topology. Shipping a lossy exporter would have been worse than shipping
+  neither.
+- **A zip with no `.shp` never registers as a shapefile.** Detection requires a
+  `.shp` member (the signature sits after xlsx/ods, which are also zips), so
+  such a file gets the generic unsupported-format message. The e2e test
+  asserts *that* rather than the reader's own error, which only fires for a
+  zip that looks like a shapefile but is corrupt.
+- **No `heavy-libs.mjs` signature for `shpjs`.** Its distinctive strings land
+  in a ~12 KB chunk, under the 40 KB floor, so a signature would never fire —
+  and per that file's own warning, a check that can't fire is worse than none.
+  The 210 KB shared-bundle ceiling is the real guard, and shared stayed at
+  181.5 KB.
+
+### Fallout, all in tests
+
+Two existing geo tests hardcoded the drop zone's full label, which now lists
+more formats. They match its stable prefix instead, so the next format added
+doesn't break them again.
+
+**Verification:** `tsc --noEmit` clean, lint clean, Vitest 776/776 (100 files),
+clean production build, bundle budget green (shared 181.5 KB of 210 KB), full
+Playwright suite at `workers: 1`.
+
+---
+
+## 43. Six additions from a competitor review, and a written verdict on everything else
+
+A competitor (geodataviewer.com) offers ~22 formats and a wide tool surface.
+Rather than chase the list, each capability was costed against this codebase;
+six were built, the rest were written down with their verdicts so the same
+evaluation never has to happen twice.
+
+### The strategic finding
+
+They achieve breadth with **GDAL compiled to WebAssembly** — one monolithic
+binary covering every format. That's the fork in the road, and the answer is
+no, for a reason that isn't "too big": it inverts this project's page-weight
+advantage. Converting a KML here costs ~190 KB; under GDAL the identical
+conversion pulls tens of MB, because GDAL can't be tree-shaken per format.
+The per-format readers are *better* for the common cases and worse only for
+the long tail. Recorded in `ROADMAP.md` with the condition that would change
+the answer.
+
+### Shipped
+
+- **KMZ import.** A KMZ is a zipped KML, and both `jszip` and the KML parser
+  were already here — so this only decides *which* archive entry is the
+  document. It prefers `doc.kml` and skips macOS `__MACOSX/` resource forks,
+  which otherwise yield a phantom `._doc.kml` that gets picked first and
+  fails to parse. The existing KML tool page accepts both rather than a
+  near-duplicate page being created for the compressed variant.
+- **UTM Zone Finder and Map Tile Calculator**, one `GeoCalculatorTool` with a
+  `mode` prop, both paste-first like the coordinate converter. The maths
+  lives in `engines/geospatial/convert/tiles.ts` because it has published
+  reference answers worth testing — including the UTM grid's two real
+  irregularities (zone 32 widened over southern Norway; Svalbard using only
+  31/33/35/37), which a plain `floor((lon+180)/6)+1` gets wrong.
+- **Bounding Box, Centroid and Convex Hull pages.** These operations were
+  already built and working as Studio-only Analyze actions with **no URL of
+  their own**, which made them invisible to search. Registry entries plus
+  three thin pages — the highest value-per-hour item in the whole review,
+  and zero engine work.
+- **An attribute filter in the GeoJSON viewer.**
+
+### The bug the filter nearly introduced
+
+Map highlighting addresses a feature by its index in the *unfiltered* list.
+Filtering the table and passing the row's new position through would have
+highlighted the wrong shape — silently, and only while a filter was active.
+Each row now carries its original index and the click handler translates
+back. Worth recording because the failure mode is invisible in a screenshot
+and passes any "does clicking do something?" test.
+
+### A test that asserted a remembered number
+
+The first draft of `geoTiles.test.ts` pinned Prague's zoom-12 tile to
+2213/1390 "as documented". It's 2212/1387; the implementation was right and
+the test was wrong. Fixed by computing it independently with the standard
+slippy-map formula and recording that derivation in the test.
+
+The project's rule for CRS work — *verify a projection against real reference
+coordinates, never just "it produced output"* — clearly needs its corollary
+stated too: **a reference value is only worth having if it came from
+somewhere other than memory.** Now written into the test itself.
+
+### `ROADMAP.md`
+
+New, and the reason this entry exists. Three states — **Next**, **Deferred**
+(with the condition that would promote it) and **Not building** (with the
+architectural reason) — covering GDAL, GeoTIFF, GeoPackage, FlatGeobuf,
+GeoParquet, GML, Shapefile export, PMTiles, and every server-dependent
+feature (elevation, weather, routing, geocoding), plus the earlier verdicts
+on Compress PDF, PDF password protection and coordinate editing so they live
+in one place instead of scattered across log entries.
+
+`README.txt`'s "Potential later tools" stays the product wish list;
+`ROADMAP.md` is the engineering verdict on it, and CLAUDE.md now points at it
+before anyone proposes a format.
+
+### Deliberately not in this batch
+
+**Measure distance/area on the map**, **WKT/WKB**, and **colour-by-attribute
+styling** are recorded as *Next*, not built. Measure and styling are the only
+items touching the map interaction layer, which has two documented dev-only
+failure modes (the synchronous `style.load` trap, the `relative`-class
+teardown bug), and neither earns a new indexable URL — they deserve a pass
+with real browser verification rather than riding along with six
+SEO-visible additions. WKT is really the front half of the GeoParquet
+workstream and belongs with it.
+
+**Verification:** `tsc --noEmit` clean, lint clean, Vitest 787/787 (101
+files), clean production build, bundle budget green, full Playwright suite at
+`workers: 1`.

@@ -169,4 +169,37 @@ describe("capability index integrity", () => {
       }
     }
   });
+  /**
+   * Every tool page renders the *same* Studio app, so the only thing making
+   * them distinct pages — to a reader or a crawler — is their own copy. These
+   * guard the signals that actually differentiate them, converting a one-off
+   * cannibalization audit into a standing check.
+   *
+   * Deliberately *not* checked: whether individual FAQ entries repeat across
+   * tools. 12 do today (one across 10 tools), and they should — "Is my text
+   * sent anywhere?" has the same true answer everywhere, and rewriting it 10
+   * ways to look unique would make the copy worse, not the pages more
+   * distinct. Near-duplicate *pages* are the risk; a shared reassurance
+   * inside an otherwise unique page isn't.
+   */
+  it("every tool has a unique name and description", () => {
+    const collisions: string[] = [];
+    for (const field of ["name", "description"] as const) {
+      const seen = new Map<string, string[]>();
+      for (const tool of tools) {
+        const value = tool[field];
+        seen.set(value, [...(seen.get(value) ?? []), tool.id]);
+      }
+      for (const [value, ids] of seen) {
+        if (ids.length > 1) collisions.push(`${field} shared by ${ids.join(", ")}: ${value}`);
+      }
+    }
+    expect(collisions).toEqual([]);
+  });
+
+  it("every tool has at least one FAQ entry of its own", () => {
+    // A tool page with no FAQ is thin against the Studio hub it renders.
+    const missing = tools.filter((tool) => !tool.faq || tool.faq.length === 0).map((tool) => tool.id);
+    expect(missing).toEqual([]);
+  });
 });

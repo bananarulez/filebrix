@@ -9,6 +9,7 @@ import { ProcessingError, type ProcessingErrorCode } from "@/lib/errors/Processi
 import { inspectPdfFile, type PdfDocumentInfo } from "@/engines/pdf";
 import { openPdfRenderSession, type PdfRenderSession } from "@/engines/pdf/render/session";
 import { PdfSignatureWarning } from "./PdfSignatureWarning";
+import { forgetWorkspaceFiles, recallWorkspaceFiles, rememberWorkspaceFiles } from "@/lib/workspaceFiles";
 
 /**
  * One opened PDF: the file itself, its structural page list (pdf-lib, via
@@ -120,6 +121,12 @@ export function PdfWorkspace({ children }: { children: ReactNode }) {
   // Mirrors `documents` for the event handlers and the unmount cleanup, both
   // of which need whatever is open *now* rather than a render-time snapshot.
   const documentsRef = useRef<PdfWorkspaceDocument[]>([]);
+  // Set synchronously by `loadFiles`, so the recall effect below can tell
+  // "nothing has been loaded" from "a load is already in flight" without
+  // waiting for a state update. The Universal File Drop's handoff runs in a
+  // child's effect (children mount first), so if one is pending it wins and
+  // recall correctly stands down.
+  const loadStartedRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -131,6 +138,9 @@ export function PdfWorkspace({ children }: { children: ReactNode }) {
 
   const clear = useCallback(() => {
     requestRef.current += 1;
+    // Clear is the explicit "done with this file" signal, so it also stops
+    // the next tool page from picking the file back up.
+    forgetWorkspaceFiles("pdf");
     const open = documentsRef.current;
     documentsRef.current = [];
     setDocuments([]);
@@ -143,6 +153,7 @@ export function PdfWorkspace({ children }: { children: ReactNode }) {
   const loadFiles = useCallback(async (selected: File[], options?: { append?: boolean }) => {
     if (selected.length === 0) return;
     const append = options?.append ?? false;
+    loadStartedRef.current = true;
 
     // Supersede anything still in flight before touching any state.
     const token = ++requestRef.current;
@@ -171,12 +182,45 @@ export function PdfWorkspace({ children }: { children: ReactNode }) {
       documentsRef.current = next;
       setDocuments(next);
       setStatus("ready");
+      // Every PDF tool accepts any PDF, so there's no format to check on the
+      // way back in — unlike the Image and Data workspaces.
+      rememberWorkspaceFiles(
+        "pdf",
+        next.map((doc) => doc.file),
+        next.map(() => "pdf")
+      );
     } catch (cause) {
       if (requestRef.current !== token) return await closeAll(opened);
       setError(errorFrom(cause, "Could not open this PDF."));
       setStatus("error");
     }
   }, []);
+
+  /**
+   * Re-open the PDF the user already had loaded on the tool page they came
+   * from, so moving between PDF tool URLs doesn't silently discard it. The
+   * file itself survives navigation in `lib/workspaceFiles.ts`; the parsed
+   * document and render session are rebuilt here, which is a local re-parse
+   * and cheap next to asking the user to find the file again.
+   */
+  useEffect(() => {
+    if (loadStartedRef.current) return;
+    const recalled = recallWorkspaceFiles("pdf");
+    if (!recalled) return;
+    // Deferred a microtask rather than called inline: starting the load in
+    // the effect body would set state synchronously during commit, which
+    // `react-hooks/set-state-in-effect` rightly rejects as a cascading
+    // render. Reading an external store and then handing off asynchronously
+    // is the shape that rule actually asks for.
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled || loadStartedRef.current) return;
+      void loadFiles(recalled.files);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadFiles]);
 
   const currentLoadToken = useCallback(() => requestRef.current, []);
 

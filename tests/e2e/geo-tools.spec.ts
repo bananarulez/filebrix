@@ -737,7 +737,9 @@ test.describe("Geospatial Studio — shared file workspace", () => {
     await page.goto("/geospatial-studio");
 
     const tabBar = page.getByRole("tab", { name: "Convert", exact: true });
-    const dropZone = page.getByText("Drop a GeoJSON, KML, GPX or CSV file here");
+    // Prefix match, not the full sentence: the label lists every accepted
+    // format, so it changes whenever one is added.
+    const dropZone = page.getByText(/^Drop a GeoJSON/);
     const tabBox = await tabBar.boundingBox();
     const dropBox = await dropZone.boundingBox();
 
@@ -751,10 +753,10 @@ test.describe("Geospatial Studio — shared file workspace", () => {
   }) => {
     await page.goto("/geospatial-studio");
     await page.getByRole("tab", { name: "Convert", exact: true }).click();
-    await expect(page.getByText("Drop a GeoJSON, KML, GPX or CSV file here")).toBeVisible();
+    await expect(page.getByText(/^Drop a GeoJSON/)).toBeVisible();
 
     await page.getByRole("radio", { name: "Coordinate Converter", exact: true }).click();
-    await expect(page.getByText("Drop a GeoJSON, KML, GPX or CSV file here")).toHaveCount(0);
+    await expect(page.getByText(/^Drop a GeoJSON/)).toHaveCount(0);
   });
 });
 
@@ -795,5 +797,182 @@ test.describe("Geospatial Studio — full EPSG catalogue search", () => {
     await expect
       .poll(async () => page.locator("#crs-target option").count(), { timeout: 20_000 })
       .toBeGreaterThan(10);
+  });
+});
+
+/**
+ * Shapefile and TopoJSON arrive through `parseAnyGeoFile`, so they exercise
+ * the same View/Analyze/Convert surface every other geo format does. The
+ * assertions are on real coordinate *values*, not on "a download appeared" —
+ * a reprojection that silently didn't happen still produces a perfectly
+ * valid-looking GeoJSON file (PROJECT_LOG entry 27).
+ */
+test.describe("Shapefile and TopoJSON import", () => {
+  test("a zipped shapefile in a projected CRS is reprojected to WGS84 on the way out", async ({
+    page,
+  }) => {
+    await page.goto("/geo/shapefile-to-geojson");
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("shapefile-krovak.zip"));
+
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: /download \.geojson/i }).click({ timeout: 25_000 });
+
+    const stream = await (await download).createReadStream();
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+    const geojson = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+
+    // The fixture is authored in EPSG:5514 at roughly (-743000, -1044000)
+    // metres. Anything that skipped the .prj would land far outside Earth's
+    // coordinate range, so range-checking is the real assertion here.
+    const ring = geojson.features[0].geometry.coordinates.flat(2);
+    for (let i = 0; i < ring.length; i += 2) {
+      expect(ring[i]).toBeGreaterThan(14.3);
+      expect(ring[i]).toBeLessThan(14.6);
+      expect(ring[i + 1]).toBeGreaterThan(50.0);
+      expect(ring[i + 1]).toBeLessThan(50.2);
+    }
+    expect(geojson.features[0].properties).toMatchObject({ name: "Prague square" });
+  });
+
+  test("Geospatial Studio detects a shapefile ZIP and views it like any other format", async ({
+    page,
+  }) => {
+    await page.goto("/geospatial-studio");
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("shapefile-wgs84.zip"));
+
+    await expect(page.getByText(/Detected: Shapefile/)).toBeVisible({ timeout: 25_000 });
+    // The View tab needs no picker — the workspace already knows the format.
+    await expect(page.getByText("Features", { exact: true })).toBeVisible({ timeout: 25_000 });
+    // .dbf attributes reached the feature table.
+    await expect(page.getByText("Prague").first()).toBeVisible({ timeout: 25_000 });
+  });
+
+  test("a ZIP with no shapefile inside is rejected as an unsupported file, not a crash", async ({
+    page,
+  }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+
+    await page.goto("/geospatial-studio");
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("not-a-shapefile.zip"));
+
+    // Detection requires a `.shp` member, so such a zip is never even
+    // identified as a shapefile — the user gets the generic
+    // unsupported-format message, which already names what *is* accepted.
+    // The reader's own "no .shp inside" error covers the other case (a zip
+    // that looks like a shapefile but is corrupt) and is unit-tested.
+    await expect(page.getByText(/doesn't look like a GeoJSON/i)).toBeVisible({ timeout: 25_000 });
+    expect(pageErrors).toEqual([]);
+  });
+
+  test("TopoJSON converts to GeoJSON with its arcs decoded", async ({ page }) => {
+    await page.goto("/geo/topojson-to-geojson");
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("sample.topojson"));
+
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: /download \.geojson/i }).click({ timeout: 25_000 });
+
+    const stream = await (await download).createReadStream();
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+    const geojson = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+
+    expect(geojson.type).toBe("FeatureCollection");
+    expect(geojson.features.length).toBeGreaterThan(0);
+    // Arcs are delta-encoded against the topology's transform; decoding them
+    // wrongly puts everything near (0,0) instead of near the real location.
+    const [lon, lat] = geojson.features[0].geometry.coordinates.flat(2);
+    expect(lon).toBeGreaterThan(9);
+    expect(lon).toBeLessThan(13);
+    expect(lat).toBeGreaterThan(39);
+    expect(lat).toBeLessThan(43);
+  });
+
+  test("a shapefile carries into the other tabs without a second drop", async ({ page }) => {
+    await page.goto("/geospatial-studio");
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("shapefile-wgs84.zip"));
+    await expect(page.getByText(/Detected: Shapefile/)).toBeVisible({ timeout: 25_000 });
+
+    await page.getByRole("tab", { name: "Analyze", exact: true }).click();
+    await expect(page.getByText("shapefile-wgs84.zip")).toBeVisible();
+    await expect(page.getByText(/EPSG:4326/).first()).toBeVisible({ timeout: 25_000 });
+  });
+});
+
+test.describe("KMZ, calculators and the viewer filter", () => {
+  test("a KMZ is unpacked and read like a KML", async ({ page }) => {
+    await page.goto("/geospatial-studio");
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("sample.kmz"));
+
+    await expect(page.getByText(/Detected: KMZ/)).toBeVisible({ timeout: 25_000 });
+    await expect(page.getByText("Features", { exact: true })).toBeVisible({ timeout: 25_000 });
+  });
+
+  test("the KML converter accepts a KMZ and produces GeoJSON", async ({ page }) => {
+    await page.goto("/geo/kml-to-geojson");
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("sample.kmz"));
+
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: /download \.geojson/i }).click({ timeout: 25_000 });
+
+    const stream = await (await download).createReadStream();
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+    const geojson = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    expect(geojson.type).toBe("FeatureCollection");
+    expect(geojson.features.length).toBeGreaterThan(0);
+  });
+
+  test("UTM Zone Finder answers with the zone, band and EPSG code", async ({ page }) => {
+    await page.goto("/geo/utm-zone-finder");
+    await page.getByLabel("Longitude").fill("14.4378");
+    await page.getByLabel("Latitude").fill("50.0755");
+
+    await expect(page.getByText("33U", { exact: true })).toBeVisible();
+    await expect(page.getByText("EPSG:32633", { exact: true })).toBeVisible();
+    // Paste-first: no drop zone should be implying a file is needed.
+    await expect(page.locator('input[type="file"]')).toHaveCount(0);
+  });
+
+  test("Map Tile Calculator answers with the z/x/y path", async ({ page }) => {
+    await page.goto("/geo/map-tile-calculator");
+    await page.getByLabel("Longitude").fill("14.4378");
+    await page.getByLabel("Latitude").fill("50.0755");
+    await page.getByLabel("Zoom").fill("12");
+
+    await expect(page.getByText("12/2212/1387", { exact: true })).toBeVisible();
+  });
+
+  test("the viewer's filter narrows the table and still highlights the right feature", async ({
+    page,
+  }) => {
+    await page.goto("/geo/geojson-viewer");
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("sample.geojson"));
+    await expect(page.getByText("Features", { exact: true })).toBeVisible({ timeout: 20_000 });
+
+    const filter = page.getByLabel("Filter features");
+    await filter.fill("Polygon");
+    await expect(page.getByText(/Showing \d+ of \d+ features/)).toBeVisible();
+
+    // Clicking a filtered row must select the feature it actually names, not
+    // whatever sits at that position in the unfiltered list.
+    await page.getByRole("row").nth(1).click();
+    await expect(page.getByRole("button", { name: /clear selection/i })).toBeVisible();
+  });
+
+  test("the three Analyze operations now have their own pages", async ({ page }) => {
+    for (const [path, heading] of [
+      ["/geo/geojson-bounding-box", "GeoJSON Bounding Box"],
+      ["/geo/geojson-centroid", "GeoJSON Centroid"],
+      ["/geo/geojson-convex-hull", "GeoJSON Convex Hull"],
+    ]) {
+      const response = await page.goto(path);
+      expect(response?.status(), path).toBe(200);
+      await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
+      // Locked to one Analyze action, so no picker — same promise every other
+      // locked tool page makes.
+      await expect(page.locator('[aria-label="Action"]')).toHaveCount(0);
+    }
   });
 });

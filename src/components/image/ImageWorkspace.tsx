@@ -1,12 +1,13 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { FileDropZone } from "@/components/tools/FileDropZone";
 import { FileInfo } from "@/components/tools/FileInfo";
 import { ProcessingStatus } from "@/components/tools/ProcessingStatus";
 import { ErrorPanel } from "@/components/tools/ErrorPanel";
 import { detectFileType } from "@/lib/detect/detectFile";
 import { ProcessingError, type ProcessingErrorCode } from "@/lib/errors/ProcessingError";
+import { forgetWorkspaceFiles, recallWorkspaceFiles, rememberWorkspaceFiles } from "@/lib/workspaceFiles";
 
 /** Every format Image Studio's single drop zone accepts. */
 export type ImageWorkspaceFormat = "png" | "jpg" | "webp" | "svg";
@@ -96,13 +97,28 @@ function nextEntryId(): number {
  * placed by the Studio inside its shell (tabs → action picker → drop zone →
  * tool), matching the other three Studios.
  */
-export function ImageWorkspace({ children }: { children: ReactNode }) {
+/**
+ * `acceptFormats` lets a page refuse a carried-over file it can't process:
+ * `/convert/png-to-jpg` must not silently adopt a JPEG the user was working
+ * on two pages ago. Omitted on the Studio hub, where the action picker
+ * already re-gates itself to whatever was dropped.
+ */
+export function ImageWorkspace({
+  children,
+  acceptFormats,
+}: {
+  children: ReactNode;
+  acceptFormats?: readonly ImageWorkspaceFormat[];
+}) {
   const [entries, setEntries] = useState<ImageWorkspaceEntry[]>([]);
   const [status, setStatus] = useState<ImageWorkspaceValue["status"]>("idle");
   const [error, setError] = useState<WorkspaceError | null>(null);
   const [documentKey, setDocumentKey] = useState(0);
 
+  const loadStartedRef = useRef(false);
+
   const clear = useCallback(() => {
+    forgetWorkspaceFiles("image");
     setDocumentKey((key) => key + 1);
     setEntries([]);
     setStatus("idle");
@@ -111,6 +127,7 @@ export function ImageWorkspace({ children }: { children: ReactNode }) {
 
   const loadFiles = useCallback(async (selected: File[]) => {
     if (selected.length === 0) return;
+    loadStartedRef.current = true;
     setDocumentKey((key) => key + 1);
     setEntries([]);
     setError(null);
@@ -126,11 +143,40 @@ export function ImageWorkspace({ children }: { children: ReactNode }) {
       );
       setEntries(detected);
       setStatus("ready");
+      rememberWorkspaceFiles(
+        "image",
+        detected.map((entry) => entry.file),
+        detected.map((entry) => entry.format)
+      );
     } catch (cause) {
       setError(errorFrom(cause, "Could not read these images."));
       setStatus("error");
     }
   }, []);
+
+  /**
+   * Adopt the images the user already had open on the tool page they came
+   * from. Detection ran once when they were first dropped, so the decision
+   * to accept is a synchronous format check here — no re-reading the bytes
+   * just to find out this page can't use them.
+   */
+  useEffect(() => {
+    if (loadStartedRef.current) return;
+    const recalled = recallWorkspaceFiles("image");
+    if (!recalled) return;
+    if (acceptFormats && !recalled.formats.every((format) => acceptFormats.includes(format as ImageWorkspaceFormat))) {
+      return;
+    }
+    let cancelled = false;
+    // Deferred for the same reason as PdfWorkspace's recall — see that file.
+    queueMicrotask(() => {
+      if (cancelled || loadStartedRef.current) return;
+      void loadFiles(recalled.files);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadFiles, acceptFormats]);
 
   const value = useMemo<ImageWorkspaceValue>(() => {
     const formats = new Set(entries.map((entry) => entry.format));
