@@ -141,9 +141,31 @@ export function DiffTool({ mode }: { mode: DiffMode }) {
   }
 
   /** Scrolls the first row of a change block into view. */
+  /**
+   * Centres a change inside the result box — and *only* inside it.
+   *
+   * This used to call `target.scrollIntoView({ block: "center" })`, which
+   * scrolls every scrollable ancestor including the window: stepping to the
+   * next change yanked the whole page so the row sat in the middle of the
+   * screen, even when a few pixels inside the box would have done. The result
+   * box already has its own scroll area (`max-h-[32rem] overflow-auto`), so
+   * scrolling it directly is both correct and less disruptive — the controls,
+   * the two textareas and the reader's place on the page all stay put.
+   *
+   * Measured from `getBoundingClientRect()` rather than `offsetTop`, which is
+   * relative to the nearest *positioned* ancestor and would silently start
+   * returning a different number if the surrounding layout ever gained one.
+   */
   const scrollToBlock = useCallback((blockIndex: number) => {
-    const target = resultRef.current?.querySelector(`[data-block-start="${blockIndex}"]`);
-    target?.scrollIntoView({ block: "center", behavior: "smooth" });
+    const container = resultRef.current;
+    const target = container?.querySelector<HTMLElement>(`[data-block-start="${blockIndex}"]`);
+    if (!container || !target) return;
+
+    const targetRect = target.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const delta =
+      targetRect.top - containerRect.top - (container.clientHeight - targetRect.height) / 2;
+    container.scrollBy({ top: delta, behavior: "smooth" });
   }, []);
 
   const goToBlock = useCallback(

@@ -130,17 +130,31 @@ jobs:
       # they only pass against a build that took the localhost fallback
       # (CLAUDE.md step 5).
       #
-      # --workers overrides playwright.config.ts's permanent `workers: 1`,
-      # which is a constraint of the development machine's hardware, NOT of
-      # this runner. Read that file's comment before changing this number.
-      # Kept at 2 rather than the runner's core count because each worker
-      # instantiates the ~35 MB DuckDB-WASM module.
+      # --workers is 1, matching playwright.config.ts rather than overriding it.
+      #
+      # It was 2. The webServer is `wrangler dev` (the suite runs against the
+      # deployed artifact, not `next start` — see CLAUDE.md), and under two
+      # concurrent browsers workerd died mid-run on the runner: a contiguous
+      # block of tests failing with ERR_CONNECTION_REFUSED and no recovery,
+      # preceded by a stream of `kj::...disconnected: Broken pipe` from the
+      # server. Intermittent, so a green run does not disprove it.
+      #
+      # Two things point at memory rather than a workerd bug: each worker
+      # instantiates the ~35 MB DuckDB-WASM module, and the same suite at
+      # `workers: 1` has never killed the server locally. Halving peak usage
+      # is the cheap test of that, and it costs runtime the 30-minute job
+      # timeout has room for (the last green run finished in under 10).
+      #
+      # If it still dies here, the next step is splitting the web servers —
+      # a plain static server for the bulk and `wrangler dev` only for
+      # deploy-headers.spec.ts — which is more work because redirect
+      # assertions currently live in seo.spec.ts and pdf-tools.spec.ts too.
       #
       # --reporter/--trace/--retries are passed here rather than committed to
       # the config for the same reason: they're CI-only, and the local
       # experience stays exactly as it was.
       - name: 5/5 End-to-end tests (Playwright)
-        run: npx playwright test --workers=2 --reporter=list,html --trace=on-first-retry --retries=1
+        run: npx playwright test --workers=1 --reporter=list,html --trace=on-first-retry --retries=1
 
       - name: Upload Playwright report and traces
         if: failure()

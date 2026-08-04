@@ -498,6 +498,46 @@ test.describe("Text Diff viewer", () => {
     await expect(page.getByText("Change 2 of 2")).toBeVisible();
   });
 
+  test("stepping through changes scrolls the result box, not the page", async ({ page }) => {
+    // `scrollIntoView` walks every scrollable ancestor including the window,
+    // so stepping to the next change used to yank the whole page — the
+    // controls and both textareas slid out from under the reader for a jump
+    // that a few pixels inside the box would have covered.
+    //
+    // Needs enough lines that the result box overflows *and* the page does,
+    // or neither half of the assertion means anything.
+    const lines = Array.from({ length: 90 }, (_, i) => `line ${i}`);
+    const changed = [...lines];
+    changed[80] = "line 80 CHANGED";
+
+    await page.goto("/tools/text-diff");
+    await page.getByLabel(/original text/i).fill(lines.join("\n"));
+    await page.getByLabel(/changed text/i).fill(changed.join("\n"));
+    await page.getByRole("button", { name: /^compare$/i }).click();
+    await expect(page.getByText(/\d+ changes?/).first()).toBeVisible({ timeout: 15_000 });
+
+    const box = page.locator("div.overflow-auto:has(table)").first();
+    await expect(box).toBeVisible();
+
+    const before = {
+      page: await page.evaluate(() => window.scrollY),
+      box: await box.evaluate((el) => el.scrollTop),
+    };
+
+    await page.getByRole("button", { name: "Next change" }).click();
+    await page.waitForTimeout(700); // smooth scrolling has to settle
+
+    const after = {
+      page: await page.evaluate(() => window.scrollY),
+      box: await box.evaluate((el) => el.scrollTop),
+    };
+
+    expect(after.page, "the page must not move when stepping through changes").toBe(before.page);
+    expect(after.box, "the result box should have scrolled to the change").toBeGreaterThan(
+      before.box
+    );
+  });
+
   test("toggles between split and unified views", async ({ page }) => {
     await compare(page);
     await expect(page.getByRole("tab", { name: "split", exact: true })).toHaveAttribute("aria-selected", "true");

@@ -729,6 +729,16 @@ error message pointing at the cause.
   linting bundled output exhausts Node's 4 GB heap and `npm run lint` dies with
   "Ineffective mark-compacts near heap limit", which reads like a project-wide
   problem rather than one unignored directory.
+- **Force-killing `wrangler dev` can corrupt the local R2 simulation**, and the
+  symptom points nowhere near the cause: `npm run start` then dies inside
+  `scripts/seed-local-r2.mjs` with `R2 error response does not contain the
+  CF-R2-Error header.; response.statusCode = 500` and `put: Unspecified error
+  (0)`, which reads like a wrangler bug or a broken bucket. It is neither —
+  `.wrangler/state` holds miniflare's SQLite-backed local storage, and a
+  `taskkill /T /F` mid-write leaves it inconsistent. `rm -rf .wrangler/state`
+  and re-seed; the directory is gitignored and purely local, so nothing is
+  lost. Worth reaching for early, because every other explanation is slower to
+  rule out.
 - **The only R2 step needing the dashboard is enabling R2 on the account.**
   `wrangler login --scopes-list` shows no R2 scope, which looks like the CLI
   can't touch R2 — it can. Before R2 is enabled the failure is `code: 10042`,
