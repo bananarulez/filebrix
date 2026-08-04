@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ImageBatchList, batchKey } from "./ImageBatchList";
+import { AdjustmentSlider } from "./AdjustmentSlider";
 import { useImageWorkspace } from "./ImageWorkspace";
 import { processImageFile } from "@/engines/image";
 import type { FlipAxis, RasterFormat } from "@/engines/image";
@@ -164,18 +165,14 @@ export function ImageTransformTool({ mode, onResult }: ImageTransformToolProps) 
           )}
 
           {mode === "compress" && (
-            <label className="flex items-center gap-2">
-              <span>Quality ({Math.round(quality * 100)}%)</span>
-              <input
-                type="range"
-                min={0.1}
-                max={1}
-                step={0.05}
-                value={quality}
-                onChange={(event) => setQuality(Number(event.target.value))}
-                aria-label="Quality"
-              />
-            </label>
+            <AdjustmentSlider
+              label="Quality"
+              suffix="%"
+              min={10}
+              max={100}
+              value={Math.round(quality * 100)}
+              onChange={(percent) => setQuality(percent / 100)}
+            />
           )}
 
           {mode === "rotate" && (
@@ -222,33 +219,25 @@ export function ImageTransformTool({ mode, onResult }: ImageTransformToolProps) 
           )}
 
           {mode === "brightness" && (
-            <label className="flex items-center gap-2">
-              <span>Brightness ({brightness > 0 ? "+" : ""}{brightness})</span>
-              <input
-                type="range"
-                min={-100}
-                max={100}
-                step={5}
-                value={brightness}
-                onChange={(event) => setBrightness(Number(event.target.value))}
-                aria-label="Brightness"
-              />
-            </label>
+            <AdjustmentSlider
+              label="Brightness"
+              showSign
+              min={-100}
+              max={100}
+              value={brightness}
+              onChange={setBrightness}
+            />
           )}
 
           {mode === "contrast" && (
-            <label className="flex items-center gap-2">
-              <span>Contrast ({contrast > 0 ? "+" : ""}{contrast})</span>
-              <input
-                type="range"
-                min={-100}
-                max={100}
-                step={5}
-                value={contrast}
-                onChange={(event) => setContrast(Number(event.target.value))}
-                aria-label="Contrast"
-              />
-            </label>
+            <AdjustmentSlider
+              label="Contrast"
+              showSign
+              min={-100}
+              max={100}
+              value={contrast}
+              onChange={setContrast}
+            />
           )}
 
           <button

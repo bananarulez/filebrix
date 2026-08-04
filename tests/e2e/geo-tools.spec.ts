@@ -26,7 +26,22 @@ test.describe.configure({ timeout: 60_000 });
 async function hasWebGL(page: import("@playwright/test").Page): Promise<boolean> {
   return page.evaluate(() => {
     const canvas = document.createElement("canvas");
-    return Boolean(canvas.getContext("webgl2") ?? canvas.getContext("webgl"));
+    canvas.width = 2;
+    canvas.height = 2;
+    const gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
+    if (!gl) return false;
+
+    // Having a context is not the same as being able to draw with one.
+    // Headless Firefox on a CI runner returns null above; headless WebKit
+    // hands back a context that then paints nothing, so the first version of
+    // this probe skipped Firefox correctly and let WebKit fail anyway.
+    // Clearing to a known colour and reading the pixel back is the actual
+    // question.
+    gl.clearColor(0, 1, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    const pixel = new Uint8Array(4);
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+    return pixel[1]! > 200 && pixel[0]! < 60;
   });
 }
 

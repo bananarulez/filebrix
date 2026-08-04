@@ -526,3 +526,58 @@ test.describe("Seeing the result without downloading it", () => {
     await expect(page.locator('img[alt^="Result for"]')).toHaveCount(2, { timeout: 45_000 });
   });
 });
+
+test.describe("Judging an edit without leaving the page", () => {
+  /*
+   * Both of these came from the same complaint: the tools were usable for
+   * "make it much brighter" and useless for "make it slightly brighter".
+   *
+   * Brightness and contrast had `step={5}` on a slider with no width class —
+   * the browser default, about 150px, which is 0.75px of travel per unit even
+   * at step 1. So the number box is the part that actually makes an exact
+   * value reachable, and it's what this asserts.
+   */
+  test("an exact odd value can be typed, and the slider follows it", async ({ page }) => {
+    await page.goto("/tools/rotate-image");
+    await page.goto("/image-studio");
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("opaque.jpg"));
+    await page.getByRole("tab", { name: "Edit" }).click();
+    await page.getByRole("radio", { name: "Brightness" }).click();
+
+    // 37 is unreachable with the old step of 5 — that's the point of the test.
+    // `exact` because "Brightness value" contains "Brightness" as a substring
+    // and getByLabel is substring-and-case-insensitive by default.
+    await page.getByLabel("Brightness value", { exact: true }).fill("37");
+    await expect(page.getByLabel("Brightness", { exact: true })).toHaveValue("37");
+    await expect(page.getByText("Brightness (+37)")).toBeVisible();
+  });
+
+  test("clicking the result opens it full size in a real modal, and Escape closes it", async ({
+    page,
+  }) => {
+    await page.goto("/tools/compress-image");
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("opaque.jpg"));
+    await page.getByRole("button", { name: "Compress", exact: true }).click();
+    await page.locator('img[alt^="Result for"]').waitFor({ timeout: 30_000 });
+
+    await page.locator('img[alt^="Result for"]').click();
+
+    // `:modal` is the real question — a <dialog> opened with show() rather
+    // than showModal() is `open` but traps no focus and has no backdrop.
+    expect(
+      await page.evaluate(() => document.querySelector("dialog")?.matches(":modal") ?? false)
+    ).toBe(true);
+
+    // Centred rather than pinned to the corner. Tailwind's preflight resets
+    // the `margin: auto` a modal dialog centres itself with, which looks
+    // broken while `open` and `:modal` both still report true.
+    const box = (await page.locator("dialog").boundingBox())!;
+    const viewport = page.viewportSize()!;
+    expect(box.x).toBeGreaterThan(20);
+    expect(box.y).toBeGreaterThan(20);
+    expect(box.x + box.width).toBeLessThan(viewport.width - 20);
+
+    await page.keyboard.press("Escape");
+    expect(await page.evaluate(() => document.querySelector("dialog")?.open ?? false)).toBe(false);
+  });
+});

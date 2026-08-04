@@ -5,6 +5,7 @@ import { ProcessingError } from "@/lib/errors/ProcessingError";
 import { sanitizeFilename } from "@/lib/security/filenames";
 import { formatBytes } from "@/lib/format/bytes";
 import { LazySendToToolLinks } from "@/components/tools/LazySendToToolLinks";
+import { ImageLightbox } from "./ImageLightbox";
 
 interface BatchEntry {
   key: string;
@@ -129,6 +130,8 @@ export function ImageBatchList({
   const [entries, setEntries] = useState<BatchEntry[]>(() => createEntries(files));
   const [zipping, setZipping] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
+  /** The image currently open full size, or null. */
+  const [enlarged, setEnlarged] = useState<{ src: string; alt: string; caption: string } | null>(null);
 
   /**
    * Result object URLs, which are created while processing rather than at
@@ -238,6 +241,13 @@ export function ImageBatchList({
 
   return (
     <div className="flex flex-col gap-4">
+      <ImageLightbox
+        src={enlarged?.src ?? null}
+        alt={enlarged?.alt ?? ""}
+        caption={enlarged?.caption}
+        onClose={() => setEnlarged(null)}
+      />
+
       {doneCount > 0 && (
         <button
           type="button"
@@ -262,8 +272,20 @@ export function ImageBatchList({
               className="flex flex-col items-center gap-1"
               style={single ? { width: "100%", maxWidth: 520 } : { width: 140 }}
             >
-              <div
-                className={`flex w-full items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900 ${
+              <button
+                type="button"
+                onClick={() =>
+                  setEnlarged({
+                    src: shown,
+                    alt: isResult ? `Result for ${entry.file.name}` : `Original ${entry.file.name}`,
+                    caption:
+                      entry.status === "done" && entry.blob
+                        ? `${entry.file.name} — ${describeSizeChange(entry.file.size, entry.blob.size)}`
+                        : entry.file.name,
+                  })
+                }
+                title="Click to view full size"
+                className={`flex w-full cursor-zoom-in items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-gray-50 hover:border-gray-400 dark:border-gray-800 dark:bg-gray-900 ${
                   single ? "h-80" : "h-28"
                 }`}
               >
@@ -277,7 +299,7 @@ export function ImageBatchList({
                   }
                   className="h-full w-full object-contain"
                 />
-              </div>
+              </button>
               <span className="w-full truncate text-center text-xs text-gray-500">{entry.file.name}</span>
               {entry.status === "done" && entry.blob && (
                 <span className="text-xs text-gray-500" title="Original size → result size">

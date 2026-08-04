@@ -478,16 +478,42 @@ on the same run and both worth recognising before writing the next one.
   (`getByLabel("Dissolve by attribute (optional)")`); every control on this
   site has one, and a positional locator across independently-mounting
   components is a different assertion depending on timing.
-- **Headless Firefox and WebKit on a CI runner have no WebGL.** Chromium ships
-  SwiftShader and does; those two don't. MapLibre still creates and positions
-  its `<canvas>` and simply never paints, so the failure reads as "the
-  polygon's blue fill is missing" rather than as an error — a permanently red
-  job that says nothing about the product. `geo-tools.spec.ts` now *measures*
-  WebGL support and skips with that reason rather than asserting on pixels
-  that cannot exist. **Consequence: the map's rendering is verified in
-  Chromium only.** Firefox is covered locally (real GPU); WebKit's map
-  rendering is covered nowhere, so a MapLibre regression specific to Safari
-  would not be caught by this suite at all.
+- **Headless Firefox and WebKit on a CI runner can't render WebGL, in two
+  different ways.** Chromium ships SwiftShader and can. Firefox returns `null`
+  from `getContext("webgl")`; **WebKit returns a context that then paints
+  nothing**. MapLibre still creates and positions its `<canvas>`, so the
+  failure reads as "the polygon's blue fill is missing" rather than as an
+  error. `geo-tools.spec.ts` measures the capability and skips on it — but the
+  first version asked the weaker question ("can I get a context?"), which
+  skipped Firefox correctly and let WebKit fail on the very next CI run. The
+  probe now clears a 2×2 canvas to a known colour and `readPixels` it back,
+  which is the only form of the question both browsers answer honestly. **If a
+  browser passes that probe the test still runs**, so this cannot hide a real
+  rendering bug. **Consequence: the map's rendering is verified in Chromium
+  only.** Firefox is covered locally on a real GPU; WebKit's is covered
+  nowhere, so a MapLibre regression specific to Safari would not be caught.
+
+- **A modal `<dialog>` needs `m-auto` under Tailwind.** The user-agent
+  stylesheet centres a modal dialog with `margin: auto`, and Tailwind's
+  preflight resets margin on every element — so without it the dialog pins to
+  the viewport's top-left corner. `dialog.open` and `:modal` are both `true`
+  either way, so a test asserting the modal "works" passes while it sits in
+  the corner; this was found by taking a screenshot, and
+  `image-tools.spec.ts` now asserts the dialog's real geometry. Prefer native
+  `<dialog>` + `showModal()` over a hand-rolled overlay regardless — it
+  supplies focus trapping, Escape, `aria-modal` and the backdrop, all of which
+  a div-based modal has to reimplement (`components/image/ImageLightbox.tsx`
+  is the only modal in the codebase).
+
+- **A slider's `step` is not its precision — its width is.** Brightness and
+  contrast shipped with `step={5}` and no width class, i.e. the browser
+  default of roughly 150px across a ±100 range. Dropping to `step={1}` alone
+  would have given **0.75px of travel per unit**, which is unhittable by
+  dragging. `components/image/AdjustmentSlider.tsx` widens the track *and*
+  pairs it with a number box, because the workflow those controls exist for
+  ("try 12, look, try 13") needs a value you can type and repeat. Its two
+  accessible names collide by prefix ("Brightness" / "Brightness value"), so
+  `getByLabel` queries for either need `{ exact: true }`.
 
 **Playwright role-query text matching is substring-based, case-insensitive,
 by default — a repeat gotcha across every e2e round so far.** `getByRole

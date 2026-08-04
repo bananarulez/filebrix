@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ImageBatchList, batchKey } from "./ImageBatchList";
+import { AdjustmentSlider } from "./AdjustmentSlider";
 import { useImageWorkspace } from "./ImageWorkspace";
 import { processImageFile, EXTENSION_BY_FORMAT, formatIsLossy, formatSupportsTransparency } from "@/engines/image";
 import type { RasterFormat } from "@/engines/image";
@@ -67,18 +68,14 @@ export function ImageConvertTool({ sourceFormat, targetFormat }: ImageConvertToo
             </label>
           )}
           {showQuality && (
-            <label className="flex items-center gap-2">
-              <span>Quality ({Math.round(quality * 100)}%)</span>
-              <input
-                type="range"
-                min={0.1}
-                max={1}
-                step={0.05}
-                value={quality}
-                onChange={(event) => setQuality(Number(event.target.value))}
-                aria-label="Quality"
-              />
-            </label>
+            <AdjustmentSlider
+              label="Quality"
+              suffix="%"
+              min={10}
+              max={100}
+              value={Math.round(quality * 100)}
+              onChange={(percent) => setQuality(percent / 100)}
+            />
           )}
           <button
             type="button"

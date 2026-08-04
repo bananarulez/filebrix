@@ -4203,3 +4203,72 @@ written a day after the test that finds it.
 export build, bundle budget green, Playwright 340/340 (the three Firefox image
 tests flaked once under end-of-run load and pass in isolation — now documented
 in CLAUDE.md as a known local pattern).
+
+## 49. Controls fine enough to use, a result you can actually look at, and two green tests that were wrong
+
+Follow-up to entry 47, from the same person using the thing: the image tools
+were fine for "make it much brighter" and useless for "make it slightly
+brighter".
+
+### The controls
+
+Brightness and contrast had `step={5}` — 41 positions across a ±100 range.
+Dropping to `step={1}` looked like the whole fix and isn't: the slider carried
+no width class, so it rendered at the browser default of roughly 150px, which
+is **0.75px of travel per unit**. You cannot land on a value by dragging that.
+
+`components/image/AdjustmentSlider.tsx` widens the track *and* adds a number
+box, and the number box is the part that matters — the workflow is "try 12,
+look, try 13", and typing is the only way to repeat a value or return to the
+one that looked right two attempts ago. Quality moved from `step={0.05}` to
+1% for the same reason, where the difference between 85 and 82 is measured in
+hundreds of kilobytes. Shared, so the convert tools got it too.
+
+### Looking at the result
+
+Entry 47 made the result visible at 320px, which is enough to see *that*
+something changed and not enough to judge one percent of it. Clicking the
+preview now opens it full size.
+
+Built on the native `<dialog>` and `showModal()`. That is the accessible
+option rather than the lazy one: focus trapping, Escape, `aria-modal`, page
+inertness and the backdrop all come from the browser, and every one of them is
+something a div-based overlay has to reimplement. This codebase had no modal
+at all before, and adding a half-correct one where `Toolbar` is a real tablist
+and `ActionPicker` a real radiogroup would have been a step backwards.
+
+### Both new things shipped with a passing test and a visible bug
+
+Worth recording together, because they have the same shape.
+
+**The dialog opened in the corner.** Tailwind's preflight resets `margin` on
+every element, which kills the `margin: auto` a modal `<dialog>` centres
+itself with. `dialog.open` was `true`, `:modal` matched, Escape closed it — a
+test asserting "the modal works" passed while it sat in the top-left. Found by
+looking at a screenshot. The test now measures the dialog's actual geometry.
+
+**The WebGL probe asked the wrong question.** Entry 46 skipped the map test
+where WebGL is unavailable, verified against Chromium with `--disable-webgl`,
+and it worked — for Firefox, which returns `null` from `getContext`. The very
+next CI run failed on **WebKit**, which returns a context that then paints
+nothing. The probe now clears a 2×2 canvas to a known colour and reads the
+pixel back, which is the only version of the question both browsers answer
+honestly. It still can't be verified locally, because this machine's antivirus
+removes WebKit's executable — and it is deliberately built so that a browser
+which *passes* the probe still runs the assertion, so it cannot hide a real
+Safari rendering bug.
+
+The pattern in both: a green test that measured the wrong property. Existence
+(`open`, `getContext`) instead of behaviour (position, pixels).
+
+### One thing that isn't a bug
+
+CI logs are full of `kj::…disconnected: Broken pipe` from workerd. That is the
+Worker complaining that Playwright closed a connection before it finished
+writing, which is what happens across hundreds of rapid requests. The run
+those appeared in was `342 passed, 1 failed`, and the one failure was the
+WebKit map test. Noisy, not broken.
+
+**Verification:** `tsc` clean, lint clean, Vitest 792/792, clean export build,
+bundle budget green, Playwright 342/342, plus both new behaviours driven in a
+real browser and inspected as screenshots.
