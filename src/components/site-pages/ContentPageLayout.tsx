@@ -5,6 +5,23 @@ import { SITE_CONFIG } from "@/config/site";
 
 interface ContentPageLayoutProps {
   title: string;
+  /**
+   * This page's own URL, passed rather than derived.
+   *
+   * It used to be computed from `title` —
+   * `/${title.toLowerCase().replace(/\s+/g, "-")}` — which happens to be right
+   * for "About" and "Contact" and was wrong for the other two: "Privacy
+   * Policy" produced `/privacy-policy` and "Terms of Service" produced
+   * `/terms-of-service`, neither of which exists. Both shipped, so those pages
+   * handed Google `BreadcrumbList` structured data whose final URL 404s
+   * (verified against the live site, not inferred).
+   *
+   * Nothing catches that by looking: the visible trail renders the *title*, so
+   * it reads correctly while the machine-readable half points somewhere else.
+   * Deriving a URL from a display string couples two things that are allowed
+   * to differ, so the derivation is gone rather than patched.
+   */
+  path: string;
   /** One or two sentences under the H1. */
   intro: string;
   children: ReactNode;
@@ -24,14 +41,20 @@ interface ContentPageLayoutProps {
  * — it renders the visible trail and its `BreadcrumbList` JSON-LD from one
  * `items` array, so the two can't disagree.
  */
-export function ContentPageLayout({ title, intro, children, showLastUpdated }: ContentPageLayoutProps) {
+export function ContentPageLayout({
+  title,
+  path,
+  intro,
+  children,
+  showLastUpdated,
+}: ContentPageLayoutProps) {
   return (
     <ProseContainer className="mx-auto flex flex-col gap-8 px-4 py-16">
       <div className="flex flex-col gap-4">
         <Breadcrumbs
           items={[
             { name: "Home", href: "/" },
-            { name: title, href: `/${title.toLowerCase().replace(/\s+/g, "-")}` },
+            { name: title, href: path },
           ]}
         />
         <header className="flex flex-col gap-3">

@@ -457,6 +457,16 @@ of sanitization, confirmed with a real script-carrying SVG payload in both
 a component test and a real-Chromium e2e test — verify this kind of claim
 with an actual payload, the same discipline already applied to XXE.
 
+**Three Firefox image tests flake locally at the end of a full run, and only
+there.** `image-tools.spec.ts`'s three `@cross-browser` tests time out waiting
+for the Download button roughly one full-suite run in three on this machine —
+and pass in isolation in under two seconds each, every time. Firefox is the
+last project in the run, so it starts cold after Chromium has just held the
+machine for six minutes, and 20s stops being generous for a worker-based
+conversion. They are green in CI. **Re-run them alone before investigating**;
+a real regression there fails in isolation too. Don't raise the timeout to
+paper over it — that hides the signal on hardware where it would be real.
+
 **Two ways an e2e test can be green locally and red in CI forever**, both hit
 on the same run and both worth recognising before writing the next one.
 

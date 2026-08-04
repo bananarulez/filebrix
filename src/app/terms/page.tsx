@@ -27,6 +27,7 @@ export default function TermsPage() {
   return (
     <ContentPageLayout
       title="Terms of Service"
+      path="/terms"
       intro={`${SITE_NAME} is free to use, with no account and no stored data. These terms are short because there isn't much to agree about.`}
       showLastUpdated
     >

@@ -29,6 +29,7 @@ export default function ContactPage() {
   return (
     <ContentPageLayout
       title="Contact"
+      path="/contact"
       intro="Three ways to get in touch, depending on what you need. Everything reaches the same person."
     >
       <div className="flex flex-col gap-6">

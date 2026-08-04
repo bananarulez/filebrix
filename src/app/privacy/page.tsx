@@ -29,6 +29,7 @@ export default function PrivacyPage() {
   return (
     <ContentPageLayout
       title="Privacy Policy"
+      path="/privacy"
       intro={`${SITE_NAME} is built so that there is almost nothing to write a privacy policy about. This page explains what that means in practice, and is honest about the exceptions.`}
       showLastUpdated
     >
@@ -85,6 +86,17 @@ export default function PrivacyPage() {
           requests; the map is drawn on top of the tiles by your own browser. This is verified by an
           automated test that inspects every off-origin request the map tools make. Tools that
           don&rsquo;t show a map never contact the tile provider at all.
+        </p>
+        <p>
+          If you want to check this — or any other file tool — for yourself rather than take it on
+          trust,{" "}
+          <Link
+            href="/are-online-file-converters-safe"
+            className="text-blue-600 underline hover:text-blue-700 dark:text-blue-400"
+          >
+            here&rsquo;s how to tell whether a converter uploads your file
+          </Link>
+          , using your browser&rsquo;s own developer tools.
         </p>
       </ContentSection>
 

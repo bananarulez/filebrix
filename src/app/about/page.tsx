@@ -23,6 +23,7 @@ export default function AboutPage() {
   return (
     <ContentPageLayout
       title="About"
+      path="/about"
       intro={`${SITE_NAME} is a collection of file tools that run entirely inside your browser. Nothing you open is ever uploaded.`}
     >
       <ContentSection title="What this is">
@@ -51,6 +52,16 @@ export default function AboutPage() {
             privacy page
           </Link>{" "}
           explains exactly how that&rsquo;s enforced and names the one deliberate exception.
+        </p>
+        <p>
+          Whether that distinction matters for what you&rsquo;re converting, and how to verify any
+          tool&rsquo;s claim yourself, is covered in{" "}
+          <Link
+            href="/are-online-file-converters-safe"
+            className="text-blue-600 underline hover:text-blue-700 dark:text-blue-400"
+          >
+            are online file converters safe?
+          </Link>
         </p>
       </ContentSection>
 

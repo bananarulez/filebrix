@@ -4124,3 +4124,82 @@ mirror-image mistake, revoking too few.
 plus the new `image-tools.spec.ts` block asserting the shown image is the
 result, that the size line is rendered, and that Compare flips both ways —
 and the two states inspected as real screenshots.
+
+## 48. Structured data pointing at pages that don't exist, and the first page written for a question
+
+Started as an SEO question — the site ranks for "xml to csv" but nothing
+targets "is it safe to convert files online" — and turned up a live defect on
+the way.
+
+### The defect
+
+`/privacy` and `/terms` were emitting `BreadcrumbList` structured data whose
+final URL 404s:
+
+```
+/privacy  ->  https://filebrix.com/privacy-policy    HTTP 404
+/terms    ->  https://filebrix.com/terms-of-service  HTTP 404
+```
+
+`ContentPageLayout` derived the breadcrumb href from the page **title** —
+`/${title.toLowerCase().replace(/\s+/g, "-")}`. Correct for "About" and
+"Contact" by coincidence, wrong for the two whose title isn't their slug.
+
+Three things had to line up for this to ship. The *visible* trail renders the
+title, so it looks right on screen while only the machine-readable half is
+wrong. `tsc` and lint can't see inside a string. And the link audit run the
+day before crawled `<a href>` attributes — structured data isn't a link, so it
+looked at everything except the thing that was broken.
+
+The derivation is gone rather than patched: a URL computed from a display
+string couples two values that are allowed to differ.
+`tests/unit/structuredDataUrls.test.ts` now walks every JSON-LD block on all
+120 built pages and asserts each internal URL resolves to a page that exists.
+Confirmed against the pre-fix build, where it named both offenders.
+
+### The homepage title
+
+"Free Online File Tools That Run in Your Browser" described the mechanism.
+Nobody searches for "runs in my browser" — they search "convert files without
+uploading", "no upload converter", "private file converter". Now "Free Online
+File Tools That Don't Upload Your Files": same claim, the language of the
+need, category term still first. The description names formats too.
+
+Changed now because the site was submitted to Search Console days ago and
+nothing is indexed yet, which makes this the cheapest it will ever be.
+
+### One page for the category question
+
+Every other indexed page targets a transactional query, which is what a new
+domain can actually win. Nothing targeted the question people ask *before*
+they trust a converter with a contract.
+
+`/are-online-file-converters-safe` answers it, under two constraints that
+mattered more than ranking: it has to be useful to someone who then doesn't
+use this site (the "check it in the Network tab" section works on any
+converter, including competitors), and our own limits are stated as plainly
+as everyone else's — the tile exception, and the fact that any site's
+JavaScript is something you're trusting. A page that only concludes "so use
+ours" is marketing, and marketing doesn't earn the links a new domain needs.
+
+Deliberately **one** page, not a set of phrase variants. That pattern is what
+Google calls doorway pages, and it's the same thin-content trap
+`registry/studios.ts` already avoids by giving a zero-tool capability no index
+page.
+
+### Two smaller things
+
+The orphan audit that started all this came back clean and is worth recording
+as a result: 120 pages, **zero** broken internal links, **zero** pages deeper
+than three clicks from the homepage, and the only pages with no inbound link
+are `/404` and `/_not-found`, which is correct. Internal linking is not this
+site's bottleneck; external links are.
+
+Entry 47's rendered-prose test immediately caught **seven** fused words in the
+new page's own copy — the same `</strong>`-swallows-its-space bug, in text
+written a day after the test that finds it.
+
+**Verification:** `tsc` clean, lint clean, Vitest 792/792 (104 files), clean
+export build, bundle budget green, Playwright 340/340 (the three Firefox image
+tests flaked once under end-of-run load and pass in isolation — now documented
+in CLAUDE.md as a known local pattern).

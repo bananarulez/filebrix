@@ -52,11 +52,22 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.3,
   }));
 
+  // Editorial content, listed apart from the trust pages above because it is
+  // a genuine search target rather than a compliance page — it answers the
+  // category-level question ("is this safe at all?") that every tool page
+  // deliberately doesn't, since those target one format each. Priority sits
+  // between a capability index and a tool for that reason.
+  const guideRoutes: MetadataRoute.Sitemap = ["/are-online-file-converters-safe"].map((path) => ({
+    url: `${SITE_URL}${path}`,
+    changeFrequency: "monthly" as const,
+    priority: 0.7,
+  }));
+
   const toolRoutes: MetadataRoute.Sitemap = tools.map((tool) => ({
     url: `${SITE_URL}${getToolUrl(tool)}`,
     changeFrequency: "monthly" as const,
     priority: 0.8,
   }));
 
-  return [...staticRoutes, ...contentRoutes, ...toolRoutes];
+  return [...staticRoutes, ...contentRoutes, ...guideRoutes, ...toolRoutes];
 }
