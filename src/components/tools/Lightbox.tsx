@@ -2,9 +2,16 @@
 
 import { useEffect, useRef } from "react";
 
-interface ImageLightboxProps {
-  /** The image to show large. `null` closes the dialog. */
+interface LightboxProps {
+  /**
+   * The image to show large. `null` closes the dialog — unless `open` says
+   * otherwise, which is how a caller that has to render its image first (PDF
+   * Studio re-rasterises the page at 1400px) can put the dialog on screen
+   * immediately instead of after a pause with nothing happening.
+   */
   src: string | null;
+  /** Overrides the default "open when there is a src". */
+  open?: boolean;
   alt: string;
   /** Shown under the image — the filename and its size change. */
   caption?: string;
@@ -12,12 +19,13 @@ interface ImageLightboxProps {
 }
 
 /**
- * Shows a processed image at full size, over the page.
+ * Shows an image at full size, over the page.
  *
- * The result preview is 320px, which is enough to see *that* an edit happened
- * and not enough to judge a one-percent change to brightness — the thing the
- * finer controls next to it now exist to make. Clicking the preview opens it
- * properly.
+ * Shared by the image tools (a 320px result preview is enough to see *that*
+ * an edit happened and not enough to judge a one-percent brightness change)
+ * and PDF Studio's page grid (a 140px thumbnail is not enough to tell which
+ * page is which before deleting one). Both had the same problem: the only way
+ * to see the thing properly was to download it.
  *
  * Built on the native `<dialog>` element and `showModal()` rather than a
  * hand-rolled overlay. That is not a shortcut, it is the accessible option:
@@ -34,15 +42,16 @@ interface ImageLightboxProps {
  * cover Escape and backdrop clicks, which is why `onClose` is wired to the
  * element rather than only to the button.
  */
-export function ImageLightbox({ src, alt, caption, onClose }: ImageLightboxProps) {
+export function Lightbox({ src, open, alt, caption, onClose }: LightboxProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const isOpen = open ?? src !== null;
 
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    if (src && !dialog.open) dialog.showModal();
-    if (!src && dialog.open) dialog.close();
-  }, [src]);
+    if (isOpen && !dialog.open) dialog.showModal();
+    if (!isOpen && dialog.open) dialog.close();
+  }, [isOpen]);
 
   return (
     <dialog
@@ -64,7 +73,7 @@ export function ImageLightbox({ src, alt, caption, onClose }: ImageLightboxProps
        */
       className="m-auto max-h-[90vh] max-w-[95vw] rounded-lg bg-white p-0 backdrop:bg-black/70 dark:bg-gray-900"
     >
-      {src && (
+      {isOpen && (
         <div className="flex max-h-[90vh] flex-col">
           <div className="flex items-center justify-between gap-4 border-b border-gray-200 px-4 py-2 dark:border-gray-800">
             <span className="truncate text-sm text-gray-600 dark:text-gray-300">{caption ?? alt}</span>
@@ -76,12 +85,21 @@ export function ImageLightbox({ src, alt, caption, onClose }: ImageLightboxProps
               Close
             </button>
           </div>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={src}
-            alt={alt}
-            className="max-h-[calc(90vh-3rem)] max-w-[95vw] object-contain"
-          />
+          {src ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={src}
+              alt={alt}
+              className="max-h-[calc(90vh-3rem)] max-w-[95vw] object-contain"
+            />
+          ) : (
+            <div
+              className="flex h-64 w-96 items-center justify-center text-sm text-gray-500"
+              role="status"
+            >
+              Rendering…
+            </div>
+          )}
         </div>
       )}
     </dialog>

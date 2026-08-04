@@ -4272,3 +4272,96 @@ WebKit map test. Noisy, not broken.
 **Verification:** `tsc` clean, lint clean, Vitest 792/792, clean export build,
 bundle budget green, Playwright 342/342, plus both new behaviours driven in a
 real browser and inspected as screenshots.
+
+## 50. Five things a person using the site actually hit
+
+Not a planned round. Five reports from real use, collected over an evening and
+done in one pass. Four are the same shape: the tool worked, and you couldn't
+see what it had done.
+
+### The image tools threw your settings away
+
+Reported as "the images are still getting reset after moving to another modify
+tab", alongside wanting to rotate, then adjust contrast, then brighten,
+without downloading and re-uploading between steps.
+
+Measured first, because "reset" could mean three different things: the **file**
+always survived; the **settings and the result** did not. `ImageStudioApp`
+keyed the transform tool on the active Edit action, so every switch remounted
+it and zeroed eight `useState`s.
+
+Two changes, and the split between them matters:
+
+- **Settings now persist** — the key is the document alone. Switching
+  Brightness → Contrast → Brightness keeps the number you dialled in.
+- **The result still clears**, deliberately. A `Job` is a snapshot of one
+  operation, and rendering a brightness result under the Contrast controls
+  would claim the wrong thing about what you are looking at.
+
+Chaining is answered separately, by **"Continue editing this result"**: the
+output replaces the workspace's file, so the next edit builds on it. That is
+what the request actually described — "first rotate, then contrast, then
+brightness" is a *sequence*, not a set of options to accumulate, and a
+sequence preserves order in a way a single combined pipeline pass cannot
+(rotate, crop, rotate again has no representation in one `ImageProcessOptions`).
+
+### You couldn't see a PDF page well enough to choose it
+
+The page grid renders each page at 140px. Enough to count pages, not enough to
+tell which is which — so deciding *which* page to delete meant opening the PDF
+somewhere else, which is the opposite of the point.
+
+Clicking a page now opens it full size, **re-rendered at 1400px** rather than
+upscaled; the test asserts `naturalWidth > 400` precisely so a stretched
+thumbnail would fail it. `ImageLightbox` became the shared
+`components/tools/Lightbox` and learned to open *before* its image is ready,
+because pdf.js has to rasterise the page first and a dialog that appears after
+a pause feels broken.
+
+### Deleting pages was invisible until you'd committed
+
+Moving and rotating already showed their effect live. Marking a page for
+deletion did nothing visible, so the result was a surprise. Marked pages are
+now greyed out — through the *same* predicate that decides the output, since
+the checkbox means opposite things in the two modes that have one ("Delete"
+drops, "Keep" retains) and reading `marked` directly is wrong half the time.
+
+### The diff viewer couldn't merge
+
+`mergeDiffBlock()` in `engines/developer/diff.ts` rebuilds one side with a
+single block taken from the other. It's short because `rows` is already an
+aligned representation of both texts — merging is choosing, per row, which
+side's value to keep. No line-number arithmetic.
+
+Two things worth keeping:
+
+- **The `→`/`←` buttons live in the change-stepper**, not floating between the
+  panes. The table is one grid with no gutter to hang them in, and pairing
+  them with the step buttons makes the keyboard path (`n`/`p`, then merge) and
+  the mouse path the same path.
+- **There is an explicit Undo.** A programmatic write to a textarea does not
+  enter the browser's undo stack, so without it one mis-aimed click silently
+  destroys text someone typed by hand.
+
+Seven unit tests, including the property that matters: merge every block in
+turn and the two sides converge to identical.
+
+### WebKit, now that it runs here at all
+
+An antivirus exclusion finally let WebKit run on the development machine, and
+it settled a question that had been open since entry 46: **the map test passes
+there.** So the WebGL probe is right and the CI failure was environmental, not
+a Safari bug.
+
+It also turned up something new. Playwright's WebKit-for-Windows has **no
+`OffscreenCanvas` at all** — main thread or worker — which the entire image
+engine is built on, so those tools fail there with "This image couldn't be
+processed". Not a Safari problem: Safari 17 supports it fully (16.2–16.6
+partially, checked against caniuse rather than recalled), and the Linux WebKit
+in CI has it. The image `@cross-browser` tests now probe for it and skip,
+which is the same discipline as the WebGL probe — measure the capability,
+don't assume the environment.
+
+**Verification:** `tsc` clean, lint clean, Vitest 799/799 (105 files), clean
+export build, bundle budget green, Playwright 349/349, plus each of the five
+driven in a real browser.

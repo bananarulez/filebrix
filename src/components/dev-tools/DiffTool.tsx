@@ -7,10 +7,12 @@ import { ProcessingError, type ProcessingErrorCode } from "@/lib/errors/Processi
 import {
   diffJsonText,
   diffText,
+  mergeDiffBlock,
   renderDiffText,
   type DiffOutcome,
   type DiffRow,
   type DiffSegment,
+  type MergeDirection,
 } from "@/engines/developer/diff";
 
 interface ErrorState {
@@ -119,19 +121,61 @@ export function DiffTool({ mode }: { mode: DiffMode }) {
   const [ignoreCase, setIgnoreCase] = useState(false);
   const [ignoreWhitespace, setIgnoreWhitespace] = useState(false);
   const [currentBlock, setCurrentBlock] = useState(0);
+  /**
+   * The panes as they were before the last merge.
+   *
+   * Merging rewrites a textarea programmatically, which the browser's own
+   * undo stack does not cover — so without this, one mis-aimed click silently
+   * destroys text someone typed by hand, with no way back.
+   */
+  const [undoSnapshot, setUndoSnapshot] = useState<{ left: string; right: string } | null>(null);
+
+  async function mergeCurrentBlock(direction: MergeDirection) {
+    if (!outcome || outcome.changeBlockCount === 0) return;
+    const merged = mergeDiffBlock(outcome.rows, currentBlock, direction);
+    setUndoSnapshot({ left, right });
+
+    if (direction === "left-to-right") {
+      setRight(merged);
+      await handleCompare(left, merged, true);
+    } else {
+      setLeft(merged);
+      await handleCompare(merged, right, true);
+    }
+  }
+
+  async function undoMerge() {
+    if (!undoSnapshot) return;
+    setLeft(undoSnapshot.left);
+    setRight(undoSnapshot.right);
+    setUndoSnapshot(null);
+    await handleCompare(undoSnapshot.left, undoSnapshot.right, true);
+  }
 
   const resultRef = useRef<HTMLDivElement | null>(null);
 
-  async function handleCompare() {
+  /**
+   * `nextLeft`/`nextRight` exist because merging changes a pane and must
+   * re-diff immediately: React state isn't updated yet at that point, so the
+   * new text has to be passed in rather than read back.
+   *
+   * `keepPosition` holds the reader where they were. Merging renumbers the
+   * remaining blocks — merge block 2 and the old block 3 becomes 2 — so
+   * resetting to the first change would throw away their place in a long
+   * diff after every single merge.
+   */
+  async function handleCompare(nextLeft = left, nextRight = right, keepPosition = false) {
     setIsComparing(true);
     setError(null);
     try {
       const result =
         mode === "json"
-          ? await diffJsonText(left, right)
-          : await diffText(left, right, { ignoreCase, ignoreWhitespace });
+          ? await diffJsonText(nextLeft, nextRight)
+          : await diffText(nextLeft, nextRight, { ignoreCase, ignoreWhitespace });
       setOutcome(result);
-      setCurrentBlock(0);
+      setCurrentBlock((current) =>
+        keepPosition ? Math.min(current, Math.max(result.changeBlockCount - 1, 0)) : 0
+      );
     } catch (cause) {
       setError(errorFrom(cause));
       setOutcome(null);
@@ -140,7 +184,6 @@ export function DiffTool({ mode }: { mode: DiffMode }) {
     }
   }
 
-  /** Scrolls the first row of a change block into view. */
   /**
    * Centres a change inside the result box — and *only* inside it.
    *
@@ -315,7 +358,44 @@ export function DiffTool({ mode }: { mode: DiffMode }) {
                   >
                     ↓
                   </button>
+
+                  {/*
+                    Merge the change you're standing on, either way.
+                    Deliberately here rather than as a control floating between
+                    the two panes: the table is one grid with no gutter to hang
+                    them in, and pairing them with the step buttons means the
+                    keyboard path (n / p to find a change, then merge it) and
+                    the mouse path are the same path.
+                  */}
+                  <button
+                    type="button"
+                    onClick={() => void mergeCurrentBlock("left-to-right")}
+                    aria-label="Merge this change into the right side"
+                    title="Copy this change from left to right"
+                    className="rounded-md border border-gray-200 px-2 py-1 text-sm hover:border-gray-400 dark:border-gray-700"
+                  >
+                    →
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void mergeCurrentBlock("right-to-left")}
+                    aria-label="Merge this change into the left side"
+                    title="Copy this change from right to left"
+                    className="rounded-md border border-gray-200 px-2 py-1 text-sm hover:border-gray-400 dark:border-gray-700"
+                  >
+                    ←
+                  </button>
                 </>
+              )}
+
+              {undoSnapshot && (
+                <button
+                  type="button"
+                  onClick={() => void undoMerge()}
+                  className="rounded-md border border-gray-200 px-2 py-1 text-sm hover:border-gray-400 dark:border-gray-700"
+                >
+                  Undo merge
+                </button>
               )}
               <div
                 role="tablist"

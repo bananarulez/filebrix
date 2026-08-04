@@ -515,6 +515,25 @@ on the same run and both worth recognising before writing the next one.
   accessible names collide by prefix ("Brightness" / "Brightness value"), so
   `getByLabel` queries for either need `{ exact: true }`.
 
+**`components/tools/Lightbox.tsx` is the only modal in the codebase**, shared
+by the image result previews and PDF Studio's page grid. Native `<dialog>` +
+`showModal()`, for the reasons in its own comment. Two things a caller has to
+know: it needs `m-auto` under Tailwind (preflight kills the centring margin),
+and `open` exists separately from `src` so a caller that must render its image
+first — PDF re-rasterises the page at 1400px — can put the dialog on screen
+immediately instead of after a pause.
+
+**A React `key` that includes the active action resets everything the user
+typed.** `ImageStudioApp` keyed its transform tool on
+`` `${activeEditAction}-${documentKey}` ``, so switching Brightness → Contrast
+remounted it and zeroed all eight settings plus the result. It keys on the
+document alone now, and the tool clears its own stale *result* during render
+when `mode` changes — settings are worth keeping across a switch, a result
+labelled with the wrong operation is not. Chaining edits is a separate
+affordance ("Continue editing this result", which replaces the workspace
+file), because "rotate, then contrast, then brighten" is a sequence and a
+sequence keeps an order that one combined `ImageProcessOptions` pass cannot.
+
 **Playwright role-query text matching is substring-based, case-insensitive,
 by default — a repeat gotcha across every e2e round so far.** `getByRole
 ("button", { name: "Convert" })` also matches an unrelated element whose

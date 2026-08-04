@@ -91,6 +91,48 @@ test.describe("Delete PDF Pages", () => {
     await page.getByRole("button", { name: "Delete selected pages" }).click();
     await expect(page.getByRole("button", { name: /download edited\.pdf/i })).toBeVisible({ timeout: 20_000 });
   });
+
+  test("a page marked for deletion is greyed out, so the result is visible before committing", async ({
+    page,
+  }) => {
+    // Moving and rotating a page already showed their effect immediately.
+    // Dropping one did not — a delete selection was a checkbox and nothing
+    // else, so what you would get back was invisible until you downloaded it.
+    await page.goto("/pdf/delete-pages");
+    await page.locator('input[type="file"]').setInputFiles(fixture("multi-page.pdf"));
+    await expect(page.getByText(/^Page 1$/).first()).toBeVisible({ timeout: 20_000 });
+
+    const opacityOf = (pageNumber: number) =>
+      page
+        .getByText(new RegExp(`^Page ${pageNumber}$`))
+        .first()
+        .evaluate((el) => {
+          // The dimming wrapper is an ancestor of the thumbnail's caption.
+          let node: HTMLElement | null = el as HTMLElement;
+          while (node) {
+            const opacity = getComputedStyle(node).opacity;
+            if (opacity !== "1") return Number(opacity);
+            node = node.parentElement;
+          }
+          return 1;
+        });
+
+    // Polled rather than read once: the dimming carries a CSS transition, so
+    // a single sample taken immediately after the click catches a value from
+    // partway through the animation rather than the settled one.
+    expect(await opacityOf(2), "page 2 starts fully visible").toBe(1);
+
+    await page.getByRole("checkbox", { name: /Delete page 2/i }).check();
+    await expect
+      .poll(opacityOf.bind(null, 2), { message: "page 2 should be dimmed once marked" })
+      .toBeLessThan(1);
+    expect(await opacityOf(3), "unmarked pages must stay fully visible").toBe(1);
+
+    await page.getByRole("checkbox", { name: /Delete page 2/i }).uncheck();
+    await expect
+      .poll(opacityOf.bind(null, 2), { message: "unmarking restores it" })
+      .toBe(1);
+  });
 });
 
 test.describe("Reorder PDF Pages", () => {
@@ -474,5 +516,36 @@ test.describe("Studio URL renames", () => {
 
     await page.goto("/geospatial-tools/view");
     await expect(page).toHaveURL(/\/geospatial-studio\/view$/);
+  });
+});
+
+test.describe("Seeing a PDF page properly", () => {
+  test("clicking a page opens it full size, re-rendered rather than upscaled", async ({ page }) => {
+    // The grid renders each page at 140px, which is enough to count pages and
+    // not enough to tell which is which — so deciding *which* page to delete
+    // meant downloading the PDF and opening it somewhere else.
+    await page.goto("/pdf/delete-pages");
+    await page.locator('input[type="file"]').setInputFiles(fixture("multi-page.pdf"));
+    await expect(page.getByText(/^Page 1$/).first()).toBeVisible({ timeout: 20_000 });
+
+    await page.getByRole("button", { name: /View page 3 full size/i }).click();
+
+    expect(
+      await page.evaluate(() => document.querySelector("dialog")?.matches(":modal") ?? false),
+      "a real modal, not a div overlay"
+    ).toBe(true);
+
+    // Re-rendered at high resolution: an upscaled 140px thumbnail would still
+    // report a natural width of 140.
+    const enlarged = page.locator("dialog img");
+    await expect(enlarged).toBeVisible({ timeout: 20_000 });
+    await expect
+      .poll(() => enlarged.evaluate((el) => (el as HTMLImageElement).naturalWidth), {
+        message: "the enlarged page should be a fresh, larger render",
+      })
+      .toBeGreaterThan(400);
+
+    await page.keyboard.press("Escape");
+    expect(await page.evaluate(() => document.querySelector("dialog")?.open ?? false)).toBe(false);
   });
 });

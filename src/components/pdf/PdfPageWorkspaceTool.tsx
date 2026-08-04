@@ -6,6 +6,7 @@ import { ProcessingProgress } from "@/components/tools/ProcessingProgress";
 import { ErrorPanel } from "@/components/tools/ErrorPanel";
 import { DownloadResult } from "@/components/tools/DownloadResult";
 import { PdfThumbnail } from "./PdfThumbnail";
+import { Lightbox } from "@/components/tools/Lightbox";
 import { buildPdfFromSelectionFiles, type PageRef } from "@/engines/pdf";
 import { usePdfWorkspace, type PdfWorkspaceDocument } from "./PdfWorkspace";
 import type { Progress } from "@/engines/shared/types";
@@ -202,9 +203,46 @@ export function PdfPageWorkspaceTool({ mode }: { mode: WorkspaceMode }) {
     );
   }
 
+  /**
+   * The page currently open full size, if any.
+   *
+   * A 140px thumbnail is enough to count pages and not enough to tell which
+   * one is which — so choosing *which* page to delete meant downloading the
+   * PDF and opening it elsewhere, which is the opposite of what this tool is
+   * for. `null` while the high-resolution render is still in flight, so the
+   * dialog opens immediately rather than after a pause.
+   */
+  const [enlarged, setEnlarged] = useState<{ pageNumber: number; src: string | null } | null>(null);
+
+  async function openPage(entry: PageEntry) {
+    const doc = documents[entry.sourceIndex];
+    if (!doc) return;
+    setEnlarged({ pageNumber: entry.pageNumber, src: null });
+    // Re-rendered rather than scaled up: the grid's copy is rasterised at
+    // 140px, so enlarging that would just be a blurry 140px image.
+    const src = await doc.session.renderThumbnail(entry.pageIndex, 1400);
+    setEnlarged((current) =>
+      current && current.pageNumber === entry.pageNumber ? { ...current, src } : current
+    );
+  }
+
+  /**
+   * Whether this page ends up in the output.
+   *
+   * The checkbox means opposite things in the two modes that have one —
+   * "Delete" marks pages to drop, "Keep" marks pages to retain — so reading a
+   * page's fate off `marked` alone is wrong half the time. Both the selection
+   * that gets processed and the greyed-out rendering below go through this one
+   * predicate, so what you see can't drift from what you get.
+   */
+  function willBeInOutput(entry: PageEntry): boolean {
+    if (mode === "delete") return !entry.marked;
+    if (mode === "extract") return entry.marked;
+    return true;
+  }
+
   function computeSelection(): PageRef[] {
-    const source =
-      mode === "delete" ? entries.filter((e) => !e.marked) : mode === "extract" ? entries.filter((e) => e.marked) : entries;
+    const source = entries.filter(willBeInOutput);
     return source.map((entry) => ({
       sourceIndex: entry.sourceIndex,
       pageIndex: entry.pageIndex,
@@ -258,21 +296,43 @@ export function PdfPageWorkspaceTool({ mode }: { mode: WorkspaceMode }) {
 
       {entries.length > 0 && (
         <>
+          <Lightbox
+            src={enlarged?.src ?? null}
+            open={enlarged !== null}
+            alt={enlarged ? `Page ${enlarged.pageNumber}` : ""}
+            caption={enlarged ? `Page ${enlarged.pageNumber}` : undefined}
+            onClose={() => setEnlarged(null)}
+          />
+
           <ul className="flex flex-wrap gap-3" aria-label="Pages">
             {entries.map((entry, index) => {
               const doc = documents[entry.sourceIndex];
               const totalRotation = (((entry.baseRotation + entry.rotationDelta) % 360) + 360) % 360;
+              // Moving and rotating already show their effect immediately;
+              // dropping a page didn't, so a delete or extract selection was
+              // invisible until after you'd committed to it and downloaded.
+              const dropped = !willBeInOutput(entry);
               return (
                 <li key={entry.key} className="flex flex-col items-center gap-1">
                   {doc && (
-                    <PdfThumbnail
-                      pageNumber={entry.pageNumber}
-                      width={entry.width}
-                      height={entry.height}
-                      rotation={totalRotation}
-                      cacheKey={`${entry.key}-${totalRotation}`}
-                      render={() => doc.session.renderThumbnail(entry.pageIndex, 140)}
-                    />
+                    <button
+                      type="button"
+                      onClick={() => void openPage(entry)}
+                      title={`View page ${entry.pageNumber} full size`}
+                      aria-label={`View page ${entry.pageNumber} full size`}
+                      className={`cursor-zoom-in rounded-md transition-opacity hover:opacity-80 ${
+                        dropped ? "opacity-30 grayscale" : ""
+                      }`}
+                    >
+                      <PdfThumbnail
+                        pageNumber={entry.pageNumber}
+                        width={entry.width}
+                        height={entry.height}
+                        rotation={totalRotation}
+                        cacheKey={`${entry.key}-${totalRotation}`}
+                        render={() => doc.session.renderThumbnail(entry.pageIndex, 140)}
+                      />
+                    </button>
                   )}
                   <div className="flex flex-wrap items-center justify-center gap-1">
                     {config.showCheckbox && (

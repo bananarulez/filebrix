@@ -5,7 +5,7 @@ import { ProcessingError } from "@/lib/errors/ProcessingError";
 import { sanitizeFilename } from "@/lib/security/filenames";
 import { formatBytes } from "@/lib/format/bytes";
 import { LazySendToToolLinks } from "@/components/tools/LazySendToToolLinks";
-import { ImageLightbox } from "./ImageLightbox";
+import { Lightbox } from "@/components/tools/Lightbox";
 
 interface BatchEntry {
   key: string;
@@ -241,7 +241,7 @@ export function ImageBatchList({
 
   return (
     <div className="flex flex-col gap-4">
-      <ImageLightbox
+      <Lightbox
         src={enlarged?.src ?? null}
         alt={enlarged?.alt ?? ""}
         caption={enlarged?.caption}

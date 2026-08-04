@@ -569,4 +569,41 @@ test.describe("Text Diff viewer", () => {
     // With nothing to step through, the navigation controls stay hidden.
     await expect(page.getByRole("button", { name: "Next change" })).toHaveCount(0);
   });
+
+  test("merges one change across, and can undo it", async ({ page }) => {
+    // The "→ / ←" a diff viewer is expected to have. Asserted on the
+    // textarea's contents, because that is what the user is left holding — a
+    // merge that redrew the table but wrote the wrong string would be silent
+    // data loss on text they typed.
+    await page.goto("/tools/text-diff");
+    await page.getByLabel(/original text/i).fill("one\nTWO\nthree\nFOUR");
+    await page.getByLabel(/changed text/i).fill("one\ntwo\nthree\nfour");
+    await page.getByRole("button", { name: /^compare$/i }).click();
+    await expect(page.getByText("2 changes")).toBeVisible({ timeout: 15_000 });
+
+    await page.getByRole("button", { name: "Merge this change into the right side" }).click();
+
+    await expect(page.getByLabel(/changed text/i)).toHaveValue("one\nTWO\nthree\nfour");
+    // One down, and the left pane is untouched.
+    await expect(page.getByText("1 change")).toBeVisible();
+    await expect(page.getByLabel(/original text/i)).toHaveValue("one\nTWO\nthree\nFOUR");
+
+    // Programmatic writes don't enter the browser's undo stack, so the tool
+    // has to offer its own way back.
+    await page.getByRole("button", { name: "Undo merge" }).click();
+    await expect(page.getByLabel(/changed text/i)).toHaveValue("one\ntwo\nthree\nfour");
+    await expect(page.getByText("2 changes")).toBeVisible();
+  });
+
+  test("merges the other way too", async ({ page }) => {
+    await page.goto("/tools/text-diff");
+    await page.getByLabel(/original text/i).fill("one\nTWO\nthree");
+    await page.getByLabel(/changed text/i).fill("one\ntwo\nthree");
+    await page.getByRole("button", { name: /^compare$/i }).click();
+    await expect(page.getByText("1 change")).toBeVisible({ timeout: 15_000 });
+
+    await page.getByRole("button", { name: "Merge this change into the left side" }).click();
+    await expect(page.getByLabel(/original text/i)).toHaveValue("one\ntwo\nthree");
+    await expect(page.getByText("No differences")).toBeVisible();
+  });
 });

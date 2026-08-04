@@ -102,7 +102,7 @@ interface ImageTransformToolProps {
 }
 
 export function ImageTransformTool({ mode, onResult }: ImageTransformToolProps) {
-  const { files } = useImageWorkspace();
+  const { files, loadFiles } = useImageWorkspace();
   const [width, setWidth] = useState(800);
   const [height, setHeight] = useState<number | undefined>(undefined);
   const [lockAspectRatio, setLockAspectRatio] = useState(true);
@@ -112,6 +112,28 @@ export function ImageTransformTool({ mode, onResult }: ImageTransformToolProps) 
   const [brightness, setBrightness] = useState(0);
   const [contrast, setContrast] = useState(0);
   const [job, setJob] = useState<Job | null>(null);
+  /** The finished single-file result, offered as the next step's input. */
+  const [chained, setChained] = useState<{ name: string; blob: Blob } | null>(null);
+
+  /*
+   * The settings above now survive switching Edit action — `ImageStudioApp`
+   * keys this component on the document alone, so moving Brightness ->
+   * Contrast -> Brightness no longer throws away the number you dialled in.
+   * That was the reported complaint: everything reset and the result vanished.
+   *
+   * The *result* still clears, and deliberately: a `Job` is a snapshot of one
+   * operation, and rendering a brightness result under the Contrast controls
+   * would claim the wrong thing about what you are looking at. Cleared during
+   * render rather than in an effect, which `react-hooks/set-state-in-effect`
+   * correctly rejects and which React documents as the way to adjust state
+   * when a prop changes.
+   */
+  const [lastMode, setLastMode] = useState(mode);
+  if (mode !== lastMode) {
+    setLastMode(mode);
+    if (job) setJob(null);
+    if (chained) setChained(null);
+  }
 
   const hasPngInBatch = mode === "compress" && files.some((f) => f.name.toLowerCase().endsWith(".png"));
 
@@ -259,6 +281,30 @@ export function ImageTransformTool({ mode, onResult }: ImageTransformToolProps) 
         </p>
       )}
 
+      {chained && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-800">
+          <span className="text-sm text-gray-600 dark:text-gray-300">
+            Want to keep going? Edit this result instead of the original.
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              // Replaces the workspace's file, so every tool and tab now sees
+              // the edited image — which is what makes "rotate, then adjust
+              // contrast, then brighten" possible without a download and a
+              // re-drop between each step. Bumping the document also gives
+              // every tool a clean slate, so no setting from the previous
+              // step silently applies twice.
+              loadFiles([new File([chained.blob], chained.name, { type: chained.blob.type })]);
+              setChained(null);
+            }}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium hover:border-blue-400 hover:text-blue-700 dark:border-gray-700 dark:hover:text-blue-300"
+          >
+            Continue editing this result
+          </button>
+        </div>
+      )}
+
       {job && (
         <ImageBatchList
           sourceToolSlug={`${mode}-image`}
@@ -266,7 +312,10 @@ export function ImageTransformTool({ mode, onResult }: ImageTransformToolProps) 
           files={job.files}
           processFile={(file) =>
             processJobFile(mode, job, file).then((blob) => {
-              if (job.files.length === 1) onResult?.(file, blob);
+              if (job.files.length === 1) {
+                onResult?.(file, blob);
+                setChained({ name: file.name, blob });
+              }
               return blob;
             })
           }

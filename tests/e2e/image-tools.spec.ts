@@ -11,6 +11,26 @@ function fixture(name: string): string {
 
 test.describe.configure({ timeout: 60_000 });
 
+/**
+ * Whether this browser has `OffscreenCanvas`, which the whole image engine is
+ * built on — every tool decodes, transforms and encodes inside a worker.
+ *
+ * Playwright's **WebKit build for Windows has none at all**, on the main
+ * thread or in a worker, so enabling that project locally
+ * (`PLAYWRIGHT_WEBKIT=1`) makes the image tools fail with "This image
+ * couldn't be processed" — measured, not inferred. That is a gap in that
+ * build, **not in Safari**: Safari 17 supports OffscreenCanvas fully
+ * (16.2–16.6 partially), and the Linux WebKit these tests run against in CI
+ * has it, which is why the same tests are green there.
+ *
+ * So this skips rather than fails where the API is absent — a red run that
+ * says nothing about the product is worse than an honest skip — while any
+ * browser that *has* it is still held to every assertion.
+ */
+async function hasOffscreenCanvas(page: Page): Promise<boolean> {
+  return page.evaluate(() => typeof OffscreenCanvas !== "undefined");
+}
+
 /** Downloads the current result and decodes it back in-browser (via a data
  * URL + canvas) so pixel content can be verified without any Node-side
  * image-decoding dependency — reuses only the browser's own APIs, same
@@ -55,6 +75,10 @@ test.describe("PNG to JPG — transparency handling", () => {
     tag: "@cross-browser",
   }, async ({ page }) => {
     await page.goto("/convert/png-to-jpg");
+    test.skip(
+      !(await hasOffscreenCanvas(page)),
+      "no OffscreenCanvas in this browser — the image engine cannot run here"
+    );
     await page.locator('input[type="file"]').setInputFiles(fixture("transparent.png"));
 
     await expect(page.getByLabel("Background color")).toBeVisible();
@@ -78,6 +102,11 @@ test.describe("EXIF orientation", () => {
     tag: "@cross-browser",
   }, async ({ page }) => {
     await page.goto("/tools/rotate-image");
+    test.skip(
+      !(await hasOffscreenCanvas(page)),
+      "no OffscreenCanvas in this browser — the image engine cannot run here"
+    );
+
     await page.locator('input[type="file"]').setInputFiles(fixture("exif-oriented.jpg"));
 
     // No extra rotation clicked — 0° delta on top of whatever orientation
@@ -579,5 +608,69 @@ test.describe("Judging an edit without leaving the page", () => {
 
     await page.keyboard.press("Escape");
     expect(await page.evaluate(() => document.querySelector("dialog")?.open ?? false)).toBe(false);
+  });
+});
+
+test.describe("Editing more than once", () => {
+  /*
+   * Reported from real use: "the images are still getting reset after moving
+   * to another modify tab", alongside wanting to rotate, then adjust contrast,
+   * then brighten — without downloading and re-uploading between each step.
+   *
+   * Measured before changing anything: the *file* always survived; the
+   * settings and the result did not, because `ImageStudioApp` keyed the tool
+   * on the active Edit action, so every switch remounted it.
+   */
+  test("settings survive switching Edit action, and a result can be edited again", async ({
+    page,
+  }) => {
+    await page.goto("/image-studio");
+    test.skip(
+      !(await hasOffscreenCanvas(page)),
+      "no OffscreenCanvas in this browser — the image engine cannot run here"
+    );
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("opaque.jpg"));
+    await page.getByRole("tab", { name: "Edit" }).click();
+
+    await page.getByRole("radio", { name: "Brightness" }).click();
+    await page.getByLabel("Brightness value", { exact: true }).fill("40");
+
+    // A round trip through another action used to zero this.
+    await page.getByRole("radio", { name: "Contrast" }).click();
+    await page.getByRole("radio", { name: "Brightness" }).click();
+    await expect(page.getByLabel("Brightness value", { exact: true })).toHaveValue("40");
+
+    await page.getByRole("button", { name: "Apply brightness", exact: true }).click();
+    await expect(page.locator('img[alt^="Result for"]')).toBeVisible({ timeout: 45_000 });
+
+    // Chaining: the result becomes the working image, so the next edit builds
+    // on it rather than starting from the original again.
+    await page.getByRole("button", { name: "Continue editing this result" }).click();
+    await page.getByRole("radio", { name: "Rotate" }).click();
+    await page.getByRole("button", { name: "Rotate", exact: true }).click();
+    await expect(page.locator('img[alt^="Result for"]')).toBeVisible({ timeout: 45_000 });
+
+    // The second step's *input* is the first step's output, so the "before"
+    // size it reports is the edited size, not the original 2.3 KB one.
+    await expect(page.getByText(/1\.9 KB → /)).toBeVisible();
+  });
+
+  test("switching action drops the previous result rather than mislabelling it", async ({
+    page,
+  }) => {
+    // Settings persist, but a brightness result shown under the Contrast
+    // controls would claim to be something it isn't.
+    await page.goto("/image-studio");
+    test.skip(!(await hasOffscreenCanvas(page)), "no OffscreenCanvas in this browser");
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("opaque.jpg"));
+    await page.getByRole("tab", { name: "Edit" }).click();
+
+    await page.getByRole("radio", { name: "Brightness" }).click();
+    await page.getByLabel("Brightness value", { exact: true }).fill("40");
+    await page.getByRole("button", { name: "Apply brightness", exact: true }).click();
+    await expect(page.locator('img[alt^="Result for"]')).toBeVisible({ timeout: 45_000 });
+
+    await page.getByRole("radio", { name: "Contrast" }).click();
+    await expect(page.locator('img[alt^="Result for"]')).toHaveCount(0);
   });
 });

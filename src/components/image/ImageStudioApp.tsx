@@ -319,7 +319,11 @@ function ImageStudioBody({
             )}
             {isTransformMode(activeEditAction) && (
               <ImageTransformTool
-                key={`${activeEditAction}-${documentKey}`}
+                // Keyed on the document alone, not the action: including
+                // `activeEditAction` remounted the tool on every switch, which
+                // reset all eight settings and the result. The tool clears its
+                // own stale result when `mode` changes.
+                key={`transform-${documentKey}`}
                 mode={activeEditAction}
                 onResult={handleEditResult}
               />

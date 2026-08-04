@@ -352,3 +352,42 @@ export function renderDiffText(outcome: DiffOutcome): string {
     .map((line) => `${line.added ? "+ " : line.removed ? "- " : "  "}${line.value}`)
     .join("\n");
 }
+
+/** Which way a merge copies. */
+export type MergeDirection = "left-to-right" | "right-to-left";
+
+/**
+ * Rebuilds one side of a diff with a single change block taken from the other.
+ *
+ * This is the "→ / ←" merge people expect from a diff viewer, and it works
+ * because `rows` is already an *aligned* representation of both texts: every
+ * row knows its left value, its right value, or both. So rebuilding a side is
+ * just walking the rows and choosing, per row, which value to keep — the
+ * source side inside the chosen block, the target side everywhere else. No
+ * line-number arithmetic, and no dependence on the block being contiguous in
+ * either input.
+ *
+ * A row with `null` on the side being kept is a line that doesn't exist there
+ * (a pure addition or deletion), so it contributes nothing — which is exactly
+ * how merging a block *removes* lines as well as changing them.
+ *
+ * Returns the new text for the target side. The caller re-runs the diff, which
+ * renumbers the remaining blocks; that renumbering is why the UI has to hold
+ * its position by index rather than by identity after a merge.
+ */
+export function mergeDiffBlock(
+  rows: DiffRow[],
+  blockIndex: number,
+  direction: MergeDirection
+): string {
+  const fromLeft = direction === "left-to-right";
+
+  const merged = rows.flatMap((row) => {
+    const source = fromLeft ? row.left : row.right;
+    const target = fromLeft ? row.right : row.left;
+    const value = row.blockIndex === blockIndex ? source : target;
+    return value === null ? [] : [value];
+  });
+
+  return merged.join("\n");
+}
