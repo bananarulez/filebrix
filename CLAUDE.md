@@ -515,6 +515,18 @@ on the same run and both worth recognising before writing the next one.
   accessible names collide by prefix ("Brightness" / "Brightness value"), so
   `getByLabel` queries for either need `{ exact: true }`.
 
+**A pending rotation has to reach the renderer, not just the layout.**
+`PdfThumbnail` took a `rotation` prop and used it only to swap its container's
+aspect ratio, while `renderThumbnail()` rendered the page at its *stored*
+angle — so clicking rotate re-rendered byte-identical output inside a
+differently-shaped box, and the only visible effect was the preview changing
+shape. The **file was always correct** (verified by reading the page angles
+back out of a downloaded PDF with pdf-lib), which is exactly why no test
+caught it: every assertion was about the output. `renderPageThumbnail` now
+takes an absolute `rotation`, and its scale is measured from the *rotated*
+viewport — scaling from the upright one overshoots `maxWidthPx` by the aspect
+ratio.
+
 **`components/tools/Lightbox.tsx` is the only modal in the codebase**, shared
 by the image result previews and PDF Studio's page grid. Native `<dialog>` +
 `showModal()`, for the reasons in its own comment. Two things a caller has to

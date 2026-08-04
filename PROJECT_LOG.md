@@ -4365,3 +4365,53 @@ don't assume the environment.
 **Verification:** `tsc` clean, lint clean, Vitest 799/799 (105 files), clean
 export build, bundle budget green, Playwright 349/349, plus each of the five
 driven in a real browser.
+
+## 51. A rotation that only rotated the box, and a selection you couldn't see
+
+Two more from use, and the first is the more interesting failure.
+
+### Rotate changed the preview's shape, not the page
+
+`PdfThumbnail` accepted a `rotation` prop and used it for exactly one thing:
+swapping `aspectWidth`/`aspectHeight` on its container. The image itself was
+never transformed, and `renderThumbnail(pageIndex, 140)` rendered the page at
+its **stored** angle, knowing nothing about the user's pending delta. So every
+rotate click re-rendered identical bytes into a differently-shaped box.
+
+The part worth keeping: **the output was always right.** Rotating page 2 and
+downloading gave page angles `0, 90, 0, 0, 0` — checked by loading the result
+with pdf-lib rather than by looking at it. Which is precisely why nothing
+caught this. Every rotation assertion in the suite is about the produced file,
+and the produced file was correct; the lie was only ever on screen.
+
+`renderPageThumbnail` now takes an absolute rotation and passes it to
+`getViewport`. One detail that would have been a subtle bug: the scale has to
+be computed from the **rotated** viewport, because a 90°-rotated page's width
+is the upright page's height, and scaling from the upright box overshoots
+`maxWidthPx` by the aspect ratio.
+
+Verified by aspect, not by pixel count: both renders cap at the same max
+width, so the numbers don't swap — 140×198 becomes 140×99, ratio 0.71 → 1.41.
+
+### You couldn't see which change was selected
+
+The stepper said "Change 2 of 3" and scrolled there, but every change looked
+identical on arrival, so with several changes close together there was no way
+to know which one the merge buttons would act on. Now the current block
+carries an outline, and clicking any changed row selects it — the mouse can do
+what `n`/`p` already did.
+
+A left outline rather than a background tint, because the row backgrounds
+already encode added/removed/modified and overriding them would throw that
+away.
+
+### Caught myself with the documented gotcha
+
+The first version of the click test used `page.getByText("BBB")`, which
+matched four elements — the two textareas contain the same text as the table.
+That is the substring collision CLAUDE.md has warned about since entry 17,
+hit while writing a test for something else entirely. Scoped to the table.
+
+**Verification:** `tsc` clean, lint clean, Vitest 799/799, clean export build,
+Playwright 350/350, both fixes driven in a real browser and the rotation one
+confirmed against the downloaded file's actual page angles.

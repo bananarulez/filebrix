@@ -436,6 +436,31 @@ export function DiffTool({ mode }: { mode: DiffMode }) {
                   const anchor = blockStartAttribute(row, index, outcome.rows);
                   const tone = ROW_TONE[row.type];
 
+                  /*
+                   * Which change you are standing on had no visual form at
+                   * all: the stepper said "Change 2 of 5" and scrolled, but
+                   * every change looked identical once you got there, so in a
+                   * diff with several nearby changes there was no way to tell
+                   * which one the merge buttons would act on.
+                   *
+                   * A left bar rather than a background tint, because the row
+                   * backgrounds already encode added/removed/modified and
+                   * overriding them would lose that. Clicking any changed row
+                   * selects its block, so the mouse can do what n/p does.
+                   */
+                  const isCurrentBlock = row.blockIndex !== null && row.blockIndex === currentBlock;
+                  const selectable = row.blockIndex !== null;
+                  const selectionClass = isCurrentBlock
+                    ? "outline outline-2 -outline-offset-2 outline-blue-500/70"
+                    : "";
+                  const rowProps = selectable
+                    ? {
+                        onClick: () => setCurrentBlock(row.blockIndex!),
+                        title: "Select this change",
+                        className: `cursor-pointer ${selectionClass}`,
+                      }
+                    : { className: selectionClass };
+
                   if (view === "unified") {
                     // One table row per side, so a modified line reads as a
                     // paired deletion and insertion the way a patch does.
@@ -477,7 +502,9 @@ export function DiffTool({ mode }: { mode: DiffMode }) {
                       <tr
                         key={`${index}-${partIndex}`}
                         data-block-start={partIndex === 0 ? anchor : undefined}
-                        className={part.tint}
+                        onClick={selectable ? () => setCurrentBlock(row.blockIndex!) : undefined}
+                        title={selectable ? "Select this change" : undefined}
+                        className={`${part.tint} ${selectable ? "cursor-pointer" : ""} ${selectionClass}`}
                       >
                         <LineNumber value={part.number} />
                         <td className="w-4 select-none px-1 text-center align-top text-gray-400">{part.sign}</td>
@@ -489,7 +516,7 @@ export function DiffTool({ mode }: { mode: DiffMode }) {
                   }
 
                   return (
-                    <tr key={index} data-block-start={anchor}>
+                    <tr key={index} data-block-start={anchor} {...rowProps}>
                       <LineNumber value={row.leftNumber} />
                       <td className={`w-1/2 whitespace-pre-wrap break-all px-2 align-top ${tone.left}`}>
                         <LineContent segments={row.leftSegments} fallback={row.left} side="left" />

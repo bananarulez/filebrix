@@ -606,4 +606,30 @@ test.describe("Text Diff viewer", () => {
     await expect(page.getByLabel(/original text/i)).toHaveValue("one\ntwo\nthree");
     await expect(page.getByText("No differences")).toBeVisible();
   });
+
+  test("the selected change is visibly marked, and clicking one selects it", async ({ page }) => {
+    // The stepper said "Change 2 of 3" and scrolled there, but every change
+    // looked identical on arrival — so with several changes close together
+    // there was no way to tell which one the merge buttons would act on.
+    await page.goto("/tools/text-diff");
+    await page.getByLabel(/original text/i).fill("a\nBBB\nc\nDDD\ne");
+    await page.getByLabel(/changed text/i).fill("a\nbbb\nc\nddd\ne");
+    await page.getByRole("button", { name: /^compare$/i }).click();
+    await expect(page.getByText("2 changes")).toBeVisible({ timeout: 15_000 });
+
+    const marked = page.locator("tr.outline");
+    await expect(marked, "the first change starts selected").toHaveCount(1);
+    await expect(marked).toContainText("BBB");
+
+    // Stepping moves the marker.
+    await page.getByRole("button", { name: "Next change" }).click();
+    await expect(page.locator("tr.outline")).toContainText("DDD");
+
+    // ...and so does clicking, which is what the mouse had no way to do.
+    // Scoped to the table: the two textareas contain this text too, and an
+    // unscoped getByText is a strict-mode violation across four matches.
+    await page.locator("table").getByText("BBB").first().click();
+    await expect(page.locator("tr.outline")).toContainText("BBB");
+    await expect(page.getByText("Change 1 of 2")).toBeVisible();
+  });
 });

@@ -220,7 +220,8 @@ export function PdfPageWorkspaceTool({ mode }: { mode: WorkspaceMode }) {
     setEnlarged({ pageNumber: entry.pageNumber, src: null });
     // Re-rendered rather than scaled up: the grid's copy is rasterised at
     // 140px, so enlarging that would just be a blurry 140px image.
-    const src = await doc.session.renderThumbnail(entry.pageIndex, 1400);
+    const rotation = (((entry.baseRotation + entry.rotationDelta) % 360) + 360) % 360;
+    const src = await doc.session.renderThumbnail(entry.pageIndex, 1400, rotation);
     setEnlarged((current) =>
       current && current.pageNumber === entry.pageNumber ? { ...current, src } : current
     );
@@ -330,7 +331,7 @@ export function PdfPageWorkspaceTool({ mode }: { mode: WorkspaceMode }) {
                         height={entry.height}
                         rotation={totalRotation}
                         cacheKey={`${entry.key}-${totalRotation}`}
-                        render={() => doc.session.renderThumbnail(entry.pageIndex, 140)}
+                        render={() => doc.session.renderThumbnail(entry.pageIndex, 140, totalRotation)}
                       />
                     </button>
                   )}

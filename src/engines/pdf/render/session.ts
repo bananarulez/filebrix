@@ -5,7 +5,7 @@ import { extractPdfText, type PdfTextExtractionResult } from "./extractText";
 
 export interface PdfRenderSession {
   pageCount: number;
-  renderThumbnail(pageIndex: number, maxWidthPx: number): Promise<string>;
+  renderThumbnail(pageIndex: number, maxWidthPx: number, rotation?: number): Promise<string>;
   renderPageImage(pageIndex: number, options: RasterizeOptions): Promise<Blob>;
   extractText(): Promise<PdfTextExtractionResult>;
   close(): Promise<void>;
@@ -25,7 +25,8 @@ export async function openPdfRenderSession(file: File): Promise<PdfRenderSession
 
   return {
     pageCount: doc.numPages,
-    renderThumbnail: (pageIndex, maxWidthPx) => renderPageThumbnail(doc, pageIndex, maxWidthPx),
+    renderThumbnail: (pageIndex, maxWidthPx, rotation) =>
+      renderPageThumbnail(doc, pageIndex, maxWidthPx, rotation),
     renderPageImage: (pageIndex, options) => renderPageImage(doc, pageIndex, options),
     extractText: () => extractPdfText(doc),
     close: async () => {
