@@ -4535,5 +4535,35 @@ Two things this taught that the warning itself didn't:
   successful deploy here. It reads like nothing shipped. It isn't the signal
   to check — the version id is, and then the content itself.
 
-`npm run cf:deploy` still cannot fail on the missing variable, so this can
-happen again. A guard in the script would close it.
+**Closed with a guard rather than a firmer warning.**
+`scripts/require-site-url.mjs` runs first in `cf:deploy` and exits 1 on an
+unset, empty, non-https, placeholder (`localhost`, `example.com`) or
+trailing-slash value, naming what would have gone wrong. A prose warning
+already existed in two files and lost to a habit; the same warning as an exit
+code doesn't.
+
+Three decisions inside it worth keeping:
+
+- **It gates `cf:deploy`, not `build`.** Step 4 of the verification suite
+  builds against `https://example.com` on purpose, and `cf:preview` runs
+  locally where the localhost fallback is correct. Gating the build would
+  have broken both.
+- **It rejects `https://example.com` too**, not just a missing value. That
+  value is syntactically fine and always wrong in a deploy — it's what the
+  docs and the test build use.
+- **A `.mjs` script, not a shell test in the npm script.** npm runs scripts
+  through cmd.exe on Windows, where `[ -z "$VAR" ]` isn't a false test but a
+  syntax error that still exits 0 — a guard that silently never fires.
+
+Each rejection path was run and its exit code checked, and
+`tests/unit/requireSiteUrl.test.ts` spawns the script as a real subprocess
+(its whole contract is the exit status, and `process.exit` inside a Vitest
+worker would take the worker with it) for all seven cases, plus that
+`cf:deploy` actually calls it *before* `next build` — a guard behind the
+build still blocks the deploy but only after paying for a build that can't
+ship.
+
+The `&&` short-circuit itself is deliberately not tested by running it: if it
+didn't short-circuit, the test would deploy the bad value it exists to
+prevent. It's already load-bearing in that same script — a failed `next build`
+must not reach `wrangler deploy` — and has held.

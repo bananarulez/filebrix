@@ -646,6 +646,10 @@ It's baked in at build time into every canonical URL, OpenGraph/Twitter URL,
 Left unset, it silently falls back to `http://localhost:3000` — confirmed by
 building and curling the output, not assumed — which would ship real pages
 with canonical tags and a sitemap pointing at localhost. See `.env.example`.
+`npm run cf:deploy` now refuses to run without a real value
+(`scripts/require-site-url.mjs`, covered by `tests/unit/requireSiteUrl.test.ts`);
+plain `npm run build` is intentionally not gated, because step 4 above uses a
+placeholder origin deliberately.
 
 **Always run the full verification suite after a non-trivial change, not just
 a subset** — every "unify N existing tools into one Studio app" pass so far
@@ -698,7 +702,14 @@ The site is a **static export** (`output: "export"`) deployed to Cloudflare
 Workers static assets, with a small hand-written Worker (`worker/index.ts`) for
 the handful of paths that can't be plain files. `npm run cf:deploy`;
 `NEXT_PUBLIC_SITE_URL` must be set in the build environment or every canonical
-URL and sitemap entry silently points at `http://localhost:3000`.
+URL and sitemap entry silently points at `http://localhost:3000`. That is now
+enforced rather than merely documented — `scripts/require-site-url.mjs` runs
+first in `cf:deploy` and refuses an unset, non-https, placeholder
+(`example.com`, `localhost`) or trailing-slash value. The prose warning had
+been in this file and in `.env.example` all along and still lost to a habit
+(PROJECT_LOG entry 52), which is the argument for the exit code. It gates
+`cf:deploy` only: `npm run build` is deliberately left alone, since the
+verification suite builds against a fake origin on purpose.
 
 **Why not `@opennextjs/cloudflare`.** It was tried, worked locally, and could
 not be deployed: bundling the Next server produced a **3.98 MiB gzipped**
