@@ -515,6 +515,45 @@ on the same run and both worth recognising before writing the next one.
   accessible names collide by prefix ("Brightness" / "Brightness value"), so
   `getByLabel` queries for either need `{ exact: true }`.
 
+**"Fit" is a mode; 100% still means 1:1.** `ImageViewerTool` opens on
+fit — the image scaled down to its frame, never up — and its readout says
+`Fit · 26%` rather than pretending that scale is 100%. Redefining 100% as
+"whatever fits" is the shortcut, and it makes the control lie about what's on
+screen, the same shape of bug as the rotate preview above. Two structural
+choices hold it up, both easy to undo by accident:
+- **The frame's height is fixed, not a `max-height`.** Fit is computed from
+  the frame's measured size, so a frame that shrink-wraps its content would
+  size itself from an image whose size depends on the frame.
+- **The image is sized with real `width`/`height`, not `transform: scale()`.**
+  A transform doesn't affect layout, so the scroll area stayed at the natural
+  size at every zoom — a zoomed-*out* image had scrollbars over blank space.
+  Explicit dimensions keep the scroll area and the picture describing one
+  rectangle. `ImageBatchList`'s previews are a different case and correctly
+  use `object-contain`: they never zoom.
+
+**MapLibre's `FullscreenControl` promotes the map container, so anything
+rendered beside it disappears.** The basemap picker is deliberately a
+*sibling* of that container (React and MapLibre must not both mutate one
+node's children), which put it outside the fullscreen subtree — visible at
+400px, gone at full screen. `createGeoMap` therefore takes
+`fullscreenContainer` and is passed `GeoMap.tsx`'s wrapper, which holds both.
+Don't "fix" this by moving the picker inside the container; that trades the
+bug for the ownership problem the sibling layout exists to avoid. The
+container's height is an **inline style**, which no stylesheet rule can beat,
+so filling the screen means *not emitting* it — tracked in React off
+`fullscreenchange` — plus `GeoMapHandle.resize()` after the commit that
+changed it, since MapLibre has to measure a container that has already
+resized.
+
+**`toBeVisible()` does not fail for an element outside the fullscreen
+element.** Measured, not assumed: with the old code the picker reported a
+real bounding box at y=750 underneath a map covering the whole screen, and
+Playwright called it visible. A fullscreen test must assert
+`document.fullscreenElement.contains(el)`. The general rule this is an
+instance of: **when a fix is about what the user can see, confirm the new
+assertion fails without the fix before trusting it** — visibility APIs answer
+"is this element displayed", not "is this element on screen".
+
 **A pending rotation has to reach the renderer, not just the layout.**
 `PdfThumbnail` took a `rotation` prop and used it only to swap its container's
 aspect ratio, while `renderThumbnail()` rendered the page at its *stored*

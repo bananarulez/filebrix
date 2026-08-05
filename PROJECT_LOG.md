@@ -4415,3 +4415,98 @@ hit while writing a test for something else entirely. Scoped to the table.
 **Verification:** `tsc` clean, lint clean, Vitest 799/799, clean export build,
 Playwright 350/350, both fixes driven in a real browser and the rotation one
 confirmed against the downloaded file's actual page angles.
+
+## 52. Two controls that showed less than they should have
+
+Both reported from use, both a case of a component answering a slightly
+different question than the one in front of it.
+
+### The image viewer opened at 1:1, so a photo arrived cropped
+
+`ImageViewerTool` rendered at natural pixel size (`max-w-none` plus
+`transform: scale(zoom/100)`) inside a `max-h-[32rem]` scroll box. So "100%"
+meant one image pixel per CSS pixel — true, and the least useful thing it
+could have been on open: a 3000×2000 photo showed roughly a sixth of itself
+behind a scrollbar, while the Edit tab below showed the same file whole
+(`ImageBatchList` uses `object-contain` in a fixed box).
+
+Fit is now a **mode**, not a redefinition of 100%. The readout says
+`Fit · 26%` on open and a plain `100%` when you zoom there, and stepping out
+of fit lands on the neighbouring multiple of the step (43% → 50%), not on a
+fixed 100%. Redefining 100% as "whatever fits" was the tempting shortcut and
+would have made the readout lie about what you were looking at — the same
+shape of bug as entry 51's rotate control.
+
+Two things fell out that are easy to reintroduce:
+
+- **The frame needs a fixed height, not a max-height.** Fit is derived from
+  the frame's measured size, so a frame that shrink-wraps its content would
+  size itself from an image whose size depends on the frame.
+- **Sizing moved from `transform: scale()` to real `width`/`height`.** A
+  transform doesn't affect layout, so the scroll area stayed at natural size
+  at every zoom — meaning a zoomed-*out* image had scrollbars over blank
+  space. That was a pre-existing bug nobody had reported; it disappeared as
+  a side effect rather than being hunted.
+
+Measured in a real browser: 3000×2000 fits to 765×510 in a 983×510 frame
+with zero overflow, 100% is genuinely 3000px wide, and 25% leaves nothing to
+scroll.
+
+### The basemap picker vanished in fullscreen
+
+MapLibre's `FullscreenControl` defaults to promoting `map.getContainer()`.
+The Light/Dark/Voyager picker is deliberately a **sibling** of that container
+— so React and MapLibre never both mutate one node's children — which put it
+outside the fullscreen subtree, where the browser paints nothing. Its own
+zoom and compass buttons survived because they live inside the container.
+
+So the cause was an otherwise-correct decision having a consequence nobody
+had looked for. Fixed by giving the control the wrapper that holds both
+(`CreateGeoMapOptions.fullscreenContainer`) rather than by moving the picker
+inside and re-creating the ownership problem.
+
+The trap that came with it: the map's height is an **inline style**, which no
+stylesheet rule can beat. Filling the screen meant *not emitting* that style
+in fullscreen, tracked in React off `fullscreenchange`, plus a `resize()` on
+the handle called after the commit that changed the height — MapLibre has to
+measure a container that has already been resized.
+
+### The assertion that would have passed either way
+
+The obvious test — `expect(picker).toBeVisible()` in fullscreen — was
+measured against the old behaviour and **does not fail**. An element outside
+the fullscreen subtree keeps its box and its computed styles, so Playwright
+calls it visible while the browser paints only the fullscreen element; the
+old code reported a picker at y=750 under a map covering the whole screen.
+The test asserts `document.fullscreenElement.contains(picker)` instead, which
+is the question that actually flips, and then selects a style to prove
+visible isn't standing in for usable.
+
+Worth generalising: **when a fix is about what the user can see, check that
+the new assertion fails without the fix before trusting it.** Visibility APIs
+answer "is this element displayed", not "is this element on screen".
+
+### Two dev-server artefacts, neither a regression
+
+`npm run dev` 404'd `/geo/geojson-viewer` while `/geospatial-studio` served
+200, and `tsc` filled with parse errors from a half-written
+`.next/dev/types/routes.d.ts`. Same cause — the running dev server rewriting
+its own generated types — and the documented `rm -rf .next` cleared both.
+Noted because the 404 looked exactly like a routing regression from the
+change in hand.
+
+**Verification:** `tsc` clean, lint clean, Vitest 799/799, clean export
+build, bundle budget passed (181.5 KB shared, 28.5 KB headroom), and both
+fixes driven in a real browser — the viewer measured by scroll overflow and
+1:1 pixel size, the map by fullscreen containment.
+
+Playwright: **348 passed, 3 failed**, and the three are the known end-of-run
+Firefox image flakes — this time with `NS_ERROR_CONNECTION_REFUSED`, i.e. the
+dev server gone rather than a slow conversion. Re-run alone they pass in under
+two seconds each, which is the documented check for telling that apart from a
+regression. Recorded rather than rounded up to "green".
+
+One thing to carry forward: the background task reported **exit code 0** for
+that run, because the command was piped into `tail` and a pipeline exits with
+its last stage's status. The failures were only visible by reading the output.
+Don't take an exit code from a piped test run as a pass.

@@ -208,6 +208,61 @@ test.describe("GeoJSON Viewer", () => {
     await expect(page.locator(".maplibregl-ctrl-fullscreen")).toBeVisible({ timeout: 15_000 });
   });
 
+  test("the basemap picker is still there — and still works — in fullscreen", async ({ page }) => {
+    // Reported from real use. MapLibre's FullscreenControl defaults to
+    // promoting `map.getContainer()`, and the basemap picker is deliberately
+    // a *sibling* of that container (React and MapLibre must not both mutate
+    // one node's children), so it fell outside the fullscreen subtree and
+    // simply stopped being displayed — at exactly the size where choosing a
+    // basemap matters most. The control is now given the wrapper that holds
+    // both.
+    await selectFile(page, "/geo/geojson-viewer", fixture("polygon.geojson"));
+    const picker = page.getByLabel("Basemap style");
+    await expect(picker).toBeVisible({ timeout: 15_000 });
+
+    test.skip(
+      !(await page.evaluate(() => document.fullscreenEnabled)),
+      "this browser has no Fullscreen API, so there is no fullscreen state to assert about"
+    );
+
+    const container = page.getByRole("region", { name: "Interactive map" });
+    const before = await container.boundingBox();
+    await page.locator(".maplibregl-ctrl-fullscreen").click();
+    await expect
+      .poll(async () => page.evaluate(() => Boolean(document.fullscreenElement)), { timeout: 10_000 })
+      .toBe(true);
+
+    // The point of the fix — and deliberately NOT `expect(picker)
+    // .toBeVisible()`, which was measured against the old behaviour and does
+    // *not* fail: an element outside the fullscreen subtree keeps its box and
+    // its computed styles, so Playwright still calls it visible even though
+    // the browser paints only the fullscreen element. Containment is the
+    // question that actually flips.
+    // Resolved through the *labelled* locator rather than a `document
+    // .querySelector("select")` inside evaluate: this page has two selects
+    // that mount independently, and a positional query here has already
+    // silently read the wrong one across browsers once.
+    await expect
+      .poll(async () => picker.evaluate((el) => Boolean(document.fullscreenElement?.contains(el))), {
+        message: "the basemap picker is inside what the browser is actually painting",
+        timeout: 10_000,
+      })
+      .toBe(true);
+    // ...and the trap that came with it: the map's height is an inline style,
+    // which no stylesheet rule can beat, so a wrapper filling the screen with
+    // a 400px map inside it would still "pass" a visibility-only check.
+    await expect
+      .poll(async () => (await container.boundingBox())?.height ?? 0, {
+        message: "the map itself fills the fullscreen area, not just its wrapper",
+        timeout: 10_000,
+      })
+      .toBeGreaterThan((before?.height ?? 0) * 1.5);
+
+    // Visible isn't the same as usable.
+    await picker.selectOption("dark");
+    await expect(picker).toHaveValue("dark");
+  });
+
   test("switching the basemap style requests tiles from the newly selected style", async ({ page }) => {
     await selectFile(page, "/geo/geojson-viewer", fixture("polygon.geojson"));
     await expect(page.locator(".maplibregl-canvas")).toBeVisible({ timeout: 15_000 });

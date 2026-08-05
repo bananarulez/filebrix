@@ -25,15 +25,19 @@ interface GeoMapProps {
 /** Renders user geospatial data locally over an external raster basemap — see README.txt §17: only tile z/x/y ever leaves the browser, never the GeoJSON itself. */
 export default function GeoMap({ geojson, bbox, height = 400, selectedFeatureIndex = null }: GeoMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<GeoMapHandle | null>(null);
   const [ready, setReady] = useState(false);
   const [basemapId, setBasemapId] = useState<BasemapId>(DEFAULT_BASEMAP);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     let cancelled = false;
-    createGeoMap(container).then((handle) => {
+    // The wrapper, not the container: see CreateGeoMapOptions. It holds both
+    // the map and the basemap picker, so fullscreen keeps the picker.
+    createGeoMap(container, { fullscreenContainer: wrapperRef.current }).then((handle) => {
       if (cancelled) {
         handle.destroy();
         return;
@@ -59,6 +63,23 @@ export default function GeoMap({ geojson, bbox, height = 400, selectedFeatureInd
     void handleRef.current.setSelectedFeature(selectedFeatureIndex);
   }, [ready, selectedFeatureIndex]);
 
+  // Tracked in React because the map's own height is an inline style, and no
+  // stylesheet rule can beat one — so filling the screen means *not emitting*
+  // that style rather than overriding it. Scoped to our own wrapper: another
+  // element on the page entering fullscreen is not this map's business.
+  useEffect(() => {
+    const onFullscreenChange = () => setIsFullscreen(document.fullscreenElement === wrapperRef.current);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  // After the commit that changed the height, not inside the event handler:
+  // MapLibre has to measure a container that has already been resized.
+  useEffect(() => {
+    if (!ready) return;
+    handleRef.current?.resize();
+  }, [ready, isFullscreen]);
+
   return (
     // The outer `relative` wrapper is what the basemap picker below
     // positions itself against — deliberately a *separate* element from
@@ -68,10 +89,13 @@ export default function GeoMap({ geojson, bbox, height = 400, selectedFeatureInd
     // two systems mutating one DOM node's child list, a well-known source
     // of React/imperative-library conflicts. Keeping MapLibre's container
     // free of React children (as it always was) sidesteps that entirely.
-    <div className="relative">
+    <div ref={wrapperRef} className="relative">
       <div
         ref={containerRef}
-        style={{ height }}
+        // Omitted entirely in fullscreen so `h-full` below can take effect —
+        // an inline height would win over any class. The browser sizes the
+        // fullscreen element (this div's parent) to the screen for us.
+        style={isFullscreen ? undefined : { height }}
         // `relative` is load-bearing, not decorative: MapLibre's own CSS
         // sets `.maplibregl-map { position: relative }` on this container
         // so its `position: absolute` canvas positions against it — but
@@ -87,7 +111,9 @@ export default function GeoMap({ geojson, bbox, height = 400, selectedFeatureInd
         // rendering at the page's top-left instead of inside this box.
         // Setting `relative` here ourselves makes rendering correct
         // regardless of whether MapLibre's own class survives that race.
-        className="relative w-full overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800"
+        className={`relative w-full overflow-hidden ${
+          isFullscreen ? "h-full" : "rounded-lg border border-gray-200 dark:border-gray-800"
+        }`}
         // Not `role="img"` (an earlier version used that): this now hosts
         // real interactive controls — MapLibre's own zoom/compass/
         // fullscreen buttons plus the basemap picker below — which

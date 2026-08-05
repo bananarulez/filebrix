@@ -64,10 +64,29 @@ export interface GeoMapHandle {
   setBasemap(id: BasemapId): void;
   /** Highlights one feature by its index in the last `setUserData` call (matching `generateId: true`'s insertion-order ids) and eases the camera to it without changing zoom. `null` clears the selection. */
   setSelectedFeature(index: number | null): Promise<void>;
+  /** Re-reads the container's size. Needed after a change MapLibre can't observe for itself — entering or leaving fullscreen, where the container's height is swapped by React rather than animated. */
+  resize(): void;
   destroy(): void;
 }
 
-export async function createGeoMap(container: HTMLElement): Promise<GeoMapHandle> {
+export interface CreateGeoMapOptions {
+  /**
+   * Element to promote to fullscreen, when it isn't the map container itself.
+   *
+   * MapLibre defaults to `map.getContainer()`, which sounds right and isn't:
+   * anything rendered as a *sibling* of that container — for us, the basemap
+   * picker, kept outside it so React and MapLibre never fight over one node's
+   * children — is outside the fullscreen subtree and simply stops being
+   * displayed. Passing the wrapper that holds both keeps the picker reachable
+   * at the size where choosing a basemap matters most.
+   */
+  fullscreenContainer?: HTMLElement | null;
+}
+
+export async function createGeoMap(
+  container: HTMLElement,
+  options: CreateGeoMapOptions = {}
+): Promise<GeoMapHandle> {
   const maplibregl = await getMaplibre();
   const map: MapInstance = new maplibregl.Map({
     container,
@@ -76,7 +95,12 @@ export async function createGeoMap(container: HTMLElement): Promise<GeoMapHandle
   });
   map.addControl(new maplibregl.AttributionControl({ compact: true }));
   map.addControl(new maplibregl.NavigationControl(), "top-right");
-  map.addControl(new maplibregl.FullscreenControl(), "top-right");
+  map.addControl(
+    new maplibregl.FullscreenControl(
+      options.fullscreenContainer ? { container: options.fullscreenContainer } : {}
+    ),
+    "top-right"
+  );
 
   // Restored after any style swap (setBasemap wipes every source/layer) and
   // used to resolve a selected index back to real geometry for panning.
@@ -245,6 +269,9 @@ export async function createGeoMap(container: HTMLElement): Promise<GeoMapHandle
       } catch {
         // A feature with no valid coordinates (null geometry, say) — highlighting still applied above, just no camera move.
       }
+    },
+    resize() {
+      map.resize();
     },
     destroy() {
       map.remove();

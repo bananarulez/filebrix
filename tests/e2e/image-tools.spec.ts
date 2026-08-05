@@ -379,20 +379,45 @@ test.describe("Image Studio hub (/image-studio)", () => {
     await expect(page.getByRole("button", { name: /download all/i })).toBeVisible({ timeout: 30_000 });
   });
 
-  test("View tab: zoom controls change the displayed percentage", async ({ page }) => {
+  test("View tab: a large image opens whole, and 100% still means 1:1", async ({ page }) => {
+    // Reported from real use: the viewer opened at 1:1 inside a fixed-height
+    // frame, so a photo arrived cropped behind a scrollbar while the Edit tab
+    // below showed the same file complete. A 6 MP fixture on purpose — a
+    // small image fits at 100% and would pass either way.
     await page.goto("/image-studio");
-    await page.locator('input[type="file"]').first().setInputFiles(fixture("opaque.jpg"));
-    await expect(page.getByText("100%")).toBeVisible();
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("photo-large.jpg"));
 
-    await page.getByRole("button", { name: "Zoom in" }).click();
-    await expect(page.getByText("125%")).toBeVisible();
+    const image = page.locator('img[alt="photo-large.jpg"]');
+    await expect(image).toBeVisible({ timeout: 20_000 });
+    const readout = page.locator("span.tabular-nums").first();
+    await expect(readout).toContainText("Fit");
 
-    await page.getByRole("button", { name: "Zoom out" }).click();
-    await expect(page.getByText("100%")).toBeVisible();
+    // The whole complaint, measured: nothing to scroll to.
+    const frame = image.locator("xpath=../..");
+    await expect
+      .poll(
+        () => frame.evaluate((el) => el.scrollHeight - el.clientHeight),
+        { message: "no vertical overflow at fit", timeout: 10_000 }
+      )
+      .toBeLessThanOrEqual(1);
+    expect(await frame.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
 
-    await page.getByRole("button", { name: "Zoom in" }).click();
+    // Fit is a mode, not a redefinition of 100%: zooming to a real 100% must
+    // still put one image pixel on one CSS pixel.
+    for (let i = 0; i < 12 && !(await readout.innerText()).trim().startsWith("100%"); i++) {
+      const shown = Number((await readout.innerText()).replace(/\D+/g, ""));
+      await page.getByRole("button", { name: shown >= 100 ? "Zoom out" : "Zoom in" }).click();
+    }
+    await expect(readout).toHaveText("100%");
+    const at100 = await image.evaluate((el: HTMLImageElement) => ({
+      shown: el.clientWidth,
+      natural: el.naturalWidth,
+    }));
+    expect(at100.shown).toBe(at100.natural);
+
+    // Reset returns to fit, not to 100%.
     await page.getByRole("button", { name: "Reset" }).click();
-    await expect(page.getByText("100%")).toBeVisible();
+    await expect(readout).toContainText("Fit");
   });
 
   test("editing an image and switching to View offers an original-vs-edited compare", async ({ page }) => {
