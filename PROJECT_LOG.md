@@ -4510,3 +4510,30 @@ One thing to carry forward: the background task reported **exit code 0** for
 that run, because the command was piped into `tail` and a pipeline exits with
 its last stage's status. The failures were only visible by reading the output.
 Don't take an exit code from a piped test run as a pass.
+
+### Deployed with the site URL unset, and shipped localhost canonicals
+
+Ran `npm run cf:deploy` with no `NEXT_PUBLIC_SITE_URL` — the exact failure
+CLAUDE.md and `.env.example` both warn about, in writing, in the file that
+was open. `next build` doesn't complain; it silently falls back to
+`http://localhost:3000`. The live site served
+`<link rel="canonical" href="http://localhost:3000/image-studio">` and a
+`sitemap.xml` whose every `<loc>` pointed at localhost, until a redeploy with
+`NEXT_PUBLIC_SITE_URL=https://filebrix.com` a few minutes later.
+
+Two things this taught that the warning itself didn't:
+
+- **The first live verification "failed" for an unrelated reason and nearly
+  sent me after the wrong bug.** Both fixes reported `SELHALO` immediately
+  after deploying, which looks like a broken deploy. `CF-Cache-Status: HIT`
+  was the actual answer — the edge was still serving the previous copy. The
+  same cache made `robots.txt` keep reporting the localhost sitemap line for
+  a while after the corrected deploy; `-H "Cache-Control: no-cache"` showed
+  the right value. **Verify a deploy through cache-busted requests, and don't
+  read a stale edge response as a failed fix.**
+- **`wrangler deploy` prints `No targets deployed for filebrix`** on a
+  successful deploy here. It reads like nothing shipped. It isn't the signal
+  to check — the version id is, and then the content itself.
+
+`npm run cf:deploy` still cannot fail on the missing variable, so this can
+happen again. A guard in the script would close it.
