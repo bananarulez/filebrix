@@ -204,22 +204,68 @@ test.describe("Developer Toolkit landing page (/developer-tools)", () => {
     // Text absorbed JSON Diff (the one JSON-bucket tool that stayed in
     // Developer Toolkit), growing from 11 to 12. See PROJECT_LOG.md "Data
     // Studio absorbs JSON/XML/YAML tooling."
-    const cases: { name: string; toolCount: string }[] = [
-      { name: "Text", toolCount: "12 tools" },
-      { name: "Encoding", toolCount: "8 tools" },
-      { name: "SQL", toolCount: "2 tools" },
-      { name: "Utilities", toolCount: "3 tools" },
+    // Counts grew again when the hub review added Regex Tester (Text), JWT
+    // Decoder (Encoding) and JSON to SQL INSERT (SQL) — PROJECT_LOG entry 53.
+    // Scoped per card, not searched page-wide: SQL and Utilities both hold 3
+    // tools, so a bare getByText("3 tools") matches two elements. The counts
+    // used to be unique by coincidence, which is what made the page-wide
+    // query look correct.
+    const cases: { slug: string; name: string; toolCount: string }[] = [
+      { slug: "text", name: "Text", toolCount: "13 tools" },
+      { slug: "encoding", name: "Encoding", toolCount: "9 tools" },
+      { slug: "sql", name: "SQL", toolCount: "3 tools" },
+      { slug: "utilities", name: "Utilities", toolCount: "3 tools" },
     ];
 
-    for (const { name, toolCount } of cases) {
-      await expect(page.getByRole("heading", { level: 2, name, exact: true })).toBeVisible();
-      await expect(page.getByText(toolCount, { exact: true })).toBeVisible();
-      await expect(page.getByRole("link", { name: `Open ${name}` })).toBeVisible();
+    for (const { slug, name, toolCount } of cases) {
+      const card = page.locator(`[data-dev-category="${slug}"]`);
+      await expect(card.getByRole("heading", { level: 2, name, exact: true })).toBeVisible();
+      await expect(card.getByText(toolCount, { exact: true })).toBeVisible();
+      await expect(card.getByRole("link", { name: `Open ${name}` })).toBeVisible();
     }
 
     await page.getByRole("link", { name: "Open Encoding" }).click();
     await expect(page).toHaveURL(/\/developer-tools\/encoding$/);
     await expect(page.getByRole("heading", { level: 1, name: "Encoding" })).toBeVisible();
+  });
+
+  test("names its tools on the hub itself, rather than only counting them", async ({ page }) => {
+    // The hub used to show four count-only cards, so it named none of the 25+
+    // tools it leads to and had no internal link to any of them — a visitor
+    // couldn't tell whether what they wanted was there without opening four
+    // pages. See PROJECT_LOG entry 53.
+    await page.goto("/developer-tools");
+
+    for (const [name, href] of [
+      ["Regex Tester", "/tools/regex-tester"],
+      ["JWT Decoder", "/tools/jwt-decoder"],
+      ["Text Diff", "/tools/text-diff"],
+      ["UUID Generator", "/tools/uuid-generator"],
+    ] as const) {
+      const link = page.getByRole("link", { name, exact: true });
+      await expect(link, `${name} is named on the hub`).toBeVisible();
+      await expect(link).toHaveAttribute("href", href);
+    }
+  });
+
+  test("carries the same Application-level signals every Studio page does", async ({ page }) => {
+    // It emitted a bare BreadcrumbList while every Studio page emitted
+    // SoftwareApplication + FAQPage, making the Application level of one fifth
+    // of the site the weakest page in its own hierarchy.
+    await page.goto("/developer-tools");
+
+    await expect(page.getByText(/never leaves your device/i).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: /frequently asked questions/i })).toBeVisible();
+
+    const types = await page
+      .locator('script[type="application/ld+json"]')
+      .evaluateAll((nodes) => nodes.map((node) => JSON.parse(node.textContent ?? "{}")["@type"]));
+    expect(types).toContain("SoftwareApplication");
+    expect(types).toContain("FAQPage");
+    expect(types).toContain("BreadcrumbList");
+    // CollectionPage belongs to the index pages one level down; claiming both
+    // would assert two page types for one URL.
+    expect(types).not.toContain("CollectionPage");
   });
 
   test("each sub-category page lists only tools that belong to it", async ({ page }) => {

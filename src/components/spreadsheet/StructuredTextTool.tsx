@@ -5,14 +5,15 @@ import { TextTransformTool, type TransformResult } from "@/components/text-tools
 import { RadioOptionGroup } from "@/components/text-tools/RadioOptionGroup";
 import { formatJson, minifyJson, parseJsonOrThrow, validateJsonText } from "@/engines/spreadsheet/format/json";
 import { formatXmlText, validateXmlText } from "@/engines/spreadsheet/format/xml";
+import { formatYaml, validateYamlText } from "@/engines/spreadsheet/format/yaml";
 import { jsonValueToXmlText, xmlTextToJsonValue } from "@/engines/spreadsheet/convert/jsonXml";
 import { jsonTextToYamlText, yamlTextToJsonText } from "@/engines/spreadsheet/convert/jsonYaml";
 
 /**
- * The nine paste-first JSON/XML/YAML actions Data Studio hosts, grouped by
+ * The eleven paste-first JSON/XML/YAML actions Data Studio hosts, grouped by
  * the Studio capability (`AppMode`) each one belongs to:
- * - `edit`:    json-formatter, json-minifier, xml-formatter
- * - `analyze`: json-validator, xml-validator
+ * - `edit`:    json-formatter, json-minifier, xml-formatter, yaml-formatter
+ * - `analyze`: json-validator, xml-validator, yaml-validator
  * - `convert`: json-to-xml, xml-to-json, json-to-yaml, yaml-to-json
  *
  * Each id is deliberately the owning tool's registry slug, so a tool page
@@ -23,8 +24,10 @@ export type StructuredTextAction =
   | "json-formatter"
   | "json-minifier"
   | "xml-formatter"
+  | "yaml-formatter"
   | "json-validator"
   | "xml-validator"
+  | "yaml-validator"
   | "json-to-xml"
   | "xml-to-json"
   | "json-to-yaml"
@@ -40,6 +43,7 @@ const INDENT_OPTIONS: { value: IndentOption; label: string }[] = [
 
 const JSON_PLACEHOLDER = '{"example": "paste your JSON here"}';
 const XML_PLACEHOLDER = "<root><example>paste your XML here</example></root>";
+const YAML_PLACEHOLDER = "example: paste your YAML here";
 
 interface ActionSpec {
   inputLabel: string;
@@ -98,6 +102,21 @@ const ACTIONS: Record<StructuredTextAction, ActionSpec> = {
     usesIndent: true,
     transform: (text, indent) => formatXmlText(text, indent === "tab" ? "\t" : " ".repeat(Number(indent))),
   },
+  "yaml-formatter": {
+    inputLabel: "YAML input",
+    outputLabel: "Formatted YAML",
+    acceptFileExtension: ".yaml,.yml",
+    downloadFileExtension: "yaml",
+    downloadMimeType: "text/yaml",
+    actionLabel: "Format",
+    placeholder: YAML_PLACEHOLDER,
+    toolSlug: "yaml-formatter",
+    // No indent picker, unlike the JSON/XML formatters: YAML indentation is
+    // syntax rather than style, and tabs are forbidden as indentation by the
+    // YAML spec — offering "Tab" here would produce a document most parsers
+    // reject.
+    transform: (text) => formatYaml(text),
+  },
   "json-validator": {
     inputLabel: "JSON input",
     outputLabel: "Result",
@@ -119,6 +138,17 @@ const ACTIONS: Record<StructuredTextAction, ActionSpec> = {
     placeholder: XML_PLACEHOLDER,
     toolSlug: "xml-validator",
     transform: (text) => validateXmlText(text),
+  },
+  "yaml-validator": {
+    inputLabel: "YAML input",
+    outputLabel: "Result",
+    acceptFileExtension: ".yaml,.yml",
+    downloadFileExtension: "txt",
+    downloadMimeType: "text/plain",
+    actionLabel: "Validate",
+    placeholder: YAML_PLACEHOLDER,
+    toolSlug: "yaml-validator",
+    transform: (text) => validateYamlText(text),
   },
   "json-to-xml": {
     inputLabel: "JSON input",
@@ -167,8 +197,10 @@ export const STRUCTURED_TEXT_LABELS: Record<StructuredTextAction, string> = {
   "json-formatter": "JSON Formatter",
   "json-minifier": "JSON Minifier",
   "xml-formatter": "XML Formatter",
+  "yaml-formatter": "YAML Formatter",
   "json-validator": "JSON Validator",
   "xml-validator": "XML Validator",
+  "yaml-validator": "YAML Validator",
   "json-to-xml": "JSON to XML",
   "xml-to-json": "XML to JSON",
   "json-to-yaml": "JSON to YAML",
@@ -176,7 +208,7 @@ export const STRUCTURED_TEXT_LABELS: Record<StructuredTextAction, string> = {
 };
 
 /**
- * One parameterized component covering all nine of Data Studio's paste-first
+ * One parameterized component covering all eleven of Data Studio's paste-first
  * JSON/XML/YAML actions, replacing nine near-identical `TextTransformTool`
  * wrappers that previously sat colocated next to their own pages — the same
  * "parameterize, don't duplicate" shape `GeoConverterTool` (`kind`) and

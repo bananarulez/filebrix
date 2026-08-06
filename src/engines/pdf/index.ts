@@ -2,6 +2,9 @@ import { createLazyEngineWorker, proxyCallback } from "@/engines/shared/workerCl
 import type { Progress } from "@/engines/shared/types";
 import { ProcessingError, type SerializedProcessingError } from "@/lib/errors/ProcessingError";
 import type { PageRef, PdfDocumentInfo, PdfMetadataInfo } from "./types";
+// Type-only, like PdfWorkerApi below — `structural/stamp.ts` imports pdf-lib,
+// so a value import here would drag it out of the worker and into this chunk.
+import type { PageNumberOptions, WatermarkPdfOptions } from "./structural/stamp";
 // Type-only import: never pulls pdf-lib into this module's chunk — the
 // worker module itself only loads on first `new Worker(...)` below.
 import type { PdfWorkerApi } from "./worker";
@@ -69,4 +72,13 @@ export function removePdfMetadataFile(file: File): Promise<Blob> {
   return call((api) => api.removePdfMetadataFile(file));
 }
 
+export function watermarkPdfFile(file: File, options: WatermarkPdfOptions): Promise<Blob> {
+  return call((api) => api.watermarkPdfFile(file, options));
+}
+
+export function addPageNumbersToFile(file: File, options: PageNumberOptions): Promise<Blob> {
+  return call((api) => api.addPageNumbersToFile(file, options));
+}
+
 export type { PageRef, PdfDocumentInfo, PdfMetadataInfo, PdfPageInfo, PdfImageFormat } from "./types";
+export type { PageNumberOptions, StampPosition, WatermarkPdfOptions } from "./structural/stamp";

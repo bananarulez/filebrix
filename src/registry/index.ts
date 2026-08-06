@@ -22,6 +22,8 @@ import { rotatePdfTool } from "./tools/rotate-pdf";
 import { extractPdfPagesTool } from "./tools/extract-pdf-pages";
 import { deletePdfPagesTool } from "./tools/delete-pdf-pages";
 import { reorderPdfPagesTool } from "./tools/reorder-pdf-pages";
+import { watermarkPdfTool } from "./tools/watermark-pdf";
+import { addPageNumbersToPdfTool } from "./tools/add-page-numbers-to-pdf";
 import { pdfMetadataViewerTool } from "./tools/pdf-metadata-viewer";
 import { removePdfMetadataTool } from "./tools/remove-pdf-metadata";
 import { imagesToPdfTool } from "./tools/images-to-pdf";
@@ -34,7 +36,23 @@ import { jpgToWebpTool } from "./tools/jpg-to-webp";
 import { pngToWebpTool } from "./tools/png-to-webp";
 import { webpToPngTool } from "./tools/webp-to-png";
 import { svgToPngTool } from "./tools/svg-to-png";
+import { yamlFormatterTool } from "./tools/yaml-formatter";
+import { yamlValidatorTool } from "./tools/yaml-validator";
+import { excelToJsonTool } from "./tools/excel-to-json";
+import { jsonToExcelTool } from "./tools/json-to-excel";
+import { parquetToCsvTool } from "./tools/parquet-to-csv";
+import { parquetToJsonTool } from "./tools/parquet-to-json";
+import { csvToParquetTool } from "./tools/csv-to-parquet";
+import { csvToYamlTool } from "./tools/csv-to-yaml";
+import { yamlToCsvTool } from "./tools/yaml-to-csv";
+import { tsvToCsvTool } from "./tools/tsv-to-csv";
+import { odsToCsvTool } from "./tools/ods-to-csv";
 import { resizeImageTool } from "./tools/resize-image";
+import { cropImageTool } from "./tools/crop-image";
+import { adjustImageBrightnessTool } from "./tools/adjust-image-brightness";
+import { adjustImageContrastTool } from "./tools/adjust-image-contrast";
+import { grayscaleImageTool } from "./tools/grayscale-image";
+import { watermarkImageTool } from "./tools/watermark-image";
 import { compressImageTool } from "./tools/compress-image";
 import { rotateImageTool } from "./tools/rotate-image";
 import { flipImageTool } from "./tools/flip-image";
@@ -88,6 +106,9 @@ import { htmlEncodeTool } from "./tools/html-encode";
 import { htmlDecodeTool } from "./tools/html-decode";
 import { unicodeEscapeTool } from "./tools/unicode-escape";
 import { unicodeUnescapeTool } from "./tools/unicode-unescape";
+import { regexTesterTool } from "./tools/regex-tester";
+import { jwtDecoderTool } from "./tools/jwt-decoder";
+import { jsonToSqlInsertTool } from "./tools/json-to-sql-insert";
 
 /**
  * The tool catalog. Add tools one file at a time under `./tools/*.ts` (each
@@ -117,6 +138,8 @@ export const tools: ToolDefinition[] = [
   extractPdfPagesTool,
   deletePdfPagesTool,
   reorderPdfPagesTool,
+  watermarkPdfTool,
+  addPageNumbersToPdfTool,
   pdfMetadataViewerTool,
   removePdfMetadataTool,
   imagesToPdfTool,
@@ -129,7 +152,23 @@ export const tools: ToolDefinition[] = [
   pngToWebpTool,
   webpToPngTool,
   svgToPngTool,
+  yamlFormatterTool,
+  yamlValidatorTool,
+  excelToJsonTool,
+  jsonToExcelTool,
+  parquetToCsvTool,
+  parquetToJsonTool,
+  csvToParquetTool,
+  csvToYamlTool,
+  yamlToCsvTool,
+  tsvToCsvTool,
+  odsToCsvTool,
   resizeImageTool,
+  cropImageTool,
+  adjustImageBrightnessTool,
+  adjustImageContrastTool,
+  grayscaleImageTool,
+  watermarkImageTool,
   compressImageTool,
   rotateImageTool,
   flipImageTool,
@@ -183,6 +222,9 @@ export const tools: ToolDefinition[] = [
   htmlDecodeTool,
   unicodeEscapeTool,
   unicodeUnescapeTool,
+  regexTesterTool,
+  jwtDecoderTool,
+  jsonToSqlInsertTool,
 ];
 
 export function getToolBySlug(

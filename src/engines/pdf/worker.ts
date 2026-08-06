@@ -5,6 +5,7 @@ import { inspectPdf } from "./structural/inspect";
 import { buildPdfFromSelection } from "./structural/pages";
 import { buildPdfFromImages } from "./structural/imagesToPdf";
 import { readPdfMetadata, removePdfMetadata } from "./structural/metadata";
+import { addPageNumbers, watermarkPdf, type PageNumberOptions, type WatermarkPdfOptions } from "./structural/stamp";
 import type { PageRef, PdfDocumentInfo, PdfMetadataInfo } from "./types";
 
 /** Same serialize-before-crossing-the-worker-boundary dance as
@@ -52,6 +53,20 @@ const api = {
 
   readPdfMetadataFile(file: File): Promise<PdfMetadataInfo> {
     return runOrThrowSerialized(async () => readPdfMetadata(await file.arrayBuffer()));
+  },
+
+  watermarkPdfFile(file: File, options: WatermarkPdfOptions): Promise<Blob> {
+    return runOrThrowSerialized(async () => {
+      const bytes = await watermarkPdf(await file.arrayBuffer(), options);
+      return new Blob([bytes as BlobPart], { type: "application/pdf" });
+    });
+  },
+
+  addPageNumbersToFile(file: File, options: PageNumberOptions): Promise<Blob> {
+    return runOrThrowSerialized(async () => {
+      const bytes = await addPageNumbers(await file.arrayBuffer(), options);
+      return new Blob([bytes as BlobPart], { type: "application/pdf" });
+    });
   },
 
   removePdfMetadataFile(file: File): Promise<Blob> {

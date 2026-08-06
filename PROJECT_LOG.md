@@ -4567,3 +4567,130 @@ The `&&` short-circuit itself is deliberately not tested by running it: if it
 didn't short-circuit, the test would deploy the bad value it exists to
 prevent. It's already load-bearing in that same script — a failed `next build`
 must not reach `wrangler deploy` — and has held.
+
+## 53. Making the built work findable, and four gaps the spec had named
+
+A review of Developer Toolkit and the four Studios, asked for as "thoroughly,
+not a quick spot check." Three of the four things it produced weren't new
+capability at all.
+
+### The Developer Toolkit hub was the weakest page in its own hierarchy
+
+The report was that it "felt sparse". It was, and measurably — not in tool
+count (25 is comparable to the Studios) but in what the page showed:
+
+| | `/developer-tools` | a Studio page |
+| --- | --- | --- |
+| tool names visible | **none** — four count-only cards | yes |
+| FAQ | **no** | yes |
+| `LocalProcessingBadge` | **no** | yes |
+| structured data | `BreadcrumbList` only | `SoftwareApplication` + `FAQPage` + `BreadcrumbList` |
+
+So the Application level of one fifth of the site named none of the 25 tools
+it leads to, and had no internal link to any of them. Each card now lists
+every tool in its category as a link, and the page carries a real FAQ
+(`DEVELOPER_TOOLKIT_FAQ` in `registry/devCategories.ts` — the registry, like a
+Studio's `faq`), the badge, and `SoftwareApplication` + `FAQPage`.
+
+**`SoftwareApplication`, not `CollectionPage`.** This is an Application page,
+the same level as `/pdf-studio`; the `CollectionPage`/`ItemList` shape belongs
+to the index pages one level down, and emitting both would claim two page
+types for one URL.
+
+Not being a Studio is a deliberate product decision (rule 10). It was never a
+licence to be thinner.
+
+### Fourteen capabilities that existed but had no URL
+
+The larger finding. Work already built, already working, and unreachable by
+search — the same problem `ROADMAP.md` records fixing once for the geo
+Bounding Box/Centroid/Convex Hull actions.
+
+- **Image Studio had 9 Edit actions and 4 tool pages.** Crop, Brightness,
+  Contrast, Grayscale and Watermark were Studio-only. "Crop image online" is
+  among the most-searched image tasks there is, and the tool was finished.
+- **Data Studio's Converter already handles any of its 8 formats to any
+  other**, including *writing* Parquet through DuckDB's `COPY … TO … (FORMAT
+  PARQUET)` — verified by reading the code path (`resolveSourceTable` →
+  `writeTableToParquet`), not assumed from the picker. Ten converter pages
+  existed. Excel↔JSON — one of the most obvious pairs on the site — was not
+  among them.
+
+Nine converter pages were added, not all 56 ordered pairs: mass-generating
+every combination is the doorway-page pattern the
+`are-online-file-converters-safe` page comments on avoiding. Parquet→CSV/JSON
+and CSV→Parquet are the differentiated ones; no comparable site does those
+client-side.
+
+### Four tools README.txt §18 named and nobody built
+
+Regex Tester, YAML Formatter, YAML Validator, JSON to SQL INSERT — plus a JWT
+Decoder, which the spec doesn't list but which has the strongest privacy
+argument of anything added here.
+
+**YAML went to Data Studio, not Developer Toolkit**, despite being on §18's
+list: `engines/spreadsheet/` is what parses YAML, exactly as it does the JSON
+and XML tools that already moved there. Formatter → Edit, Validator →
+Analyze, matching their JSON/XML siblings.
+
+Two decisions inside the new engine code worth keeping:
+
+- **The regex tester advances `lastIndex` past a zero-length match.** `exec`
+  on a pattern that can match the empty string (`a*`, `\b`, a lookahead)
+  doesn't move the cursor, so it returns the same match at the same offset
+  forever and the tab is gone. `tests/unit/developerRegex.test.ts` asserts a
+  specific finite result rather than "it returned" — a test that hangs is
+  indistinguishable from a slow one.
+- **The JWT decoder never asks for a signing secret.** Verification needs one,
+  and a web page asking you to paste it is a habit worth not building,
+  whatever it promises. A decoder that stays a decoder can honestly claim to
+  be safe. The UI says "decoded, not verified" permanently.
+
+**A test found a real design flaw rather than a typo.** The first JWT version
+rejected `Bearer abc.def.ghi` with a base64 error, and the error pointed
+nowhere near the cause — because the prefix *doesn't* trip the segment-count
+check: `"Bearer abc.def.ghi"` still splits into exactly three parts. The fix
+was to strip the prefix, which is what someone pasting from an `Authorization`
+header actually wants, not to improve the message.
+
+### Watermark PDF and page numbering
+
+Both are `drawText` on every page, so they're one engine module
+(`structural/stamp.ts`) and one component (`PdfStampTool`, `mode` prop), the
+same consolidation as `PdfPageWorkspaceTool`. They needed a new **Edit** tab
+in PDF Studio and its capability index page.
+
+**Page rotation is the trap here.** Content coordinates live in unrotated page
+space, but `/Rotate` makes the viewer turn the page — so a number placed
+"bottom-right" on a page with `/Rotate 90` lands somewhere else entirely, and
+*every assertion about the output document still passes*. `visibleToUnrotated`
+is exported purely so its four corner mappings can be pinned exactly
+(`tests/unit/pdfStamp.test.ts`), since the rendering around it can't be
+unit-tested at all.
+
+**Latin-1 only, stated rather than discovered.** The 14 standard PDF fonts
+need no embedded font file, which is why the output stays small — and they
+can't encode Cyrillic, Greek, CJK, or Czech's ř/ě/ů. `assertEncodable` rejects
+that text with a sentence naming the reason instead of handing back a
+partially-stamped document.
+
+### Two false failures while verifying, both mine
+
+The browser check reported the watermark missing, twice, and the feature was
+fine both times:
+
+1. **Searching the saved bytes for `Helvetica`** — pdf-lib packs objects into
+   object streams on save, so it isn't there.
+2. **Searching an uncompressed re-save for the drawn string** — content
+   streams stay Flate-compressed independently of `useObjectStreams`.
+
+The check that actually answers the question is running the output through the
+site's own PDF-to-Text tool, i.e. real pdf.js: `CONFIDENTIAL` comes back, and
+all five `Page N of 5` labels do. Worth the detour as a general point —
+**"I couldn't find the string in the file" is not evidence the string isn't
+in the document**, for any format that compresses.
+
+**Verification:** `tsc` clean, lint clean, Vitest 843/843 (up from 799), clean
+export build of 142 routes (up from 120), bundle budget passed with the shared
+chunk unchanged at 181.5 KB, and the two PDF tools driven end to end in a real
+browser including a rotated page.

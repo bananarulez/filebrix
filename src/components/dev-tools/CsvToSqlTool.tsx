@@ -8,7 +8,7 @@ import { ErrorPanel } from "@/components/tools/ErrorPanel";
 import { DownloadResult } from "@/components/tools/DownloadResult";
 import { deriveOutputFilename } from "@/lib/format/deriveOutputFilename";
 import { ProcessingError, type ProcessingErrorCode } from "@/lib/errors/ProcessingError";
-import { parseCsvFile, type NormalizedTable } from "@/engines/spreadsheet";
+import { parseCsvFile, parseJsonFile, type NormalizedTable } from "@/engines/spreadsheet";
 import {
   buildInsertStatements,
   INSERT_SQL_DIALECTS,
@@ -31,7 +31,42 @@ function defaultTableName(filename: string): string {
   return cleaned || "my_table";
 }
 
-export function CsvToSqlTool() {
+/**
+ * Which source format this instance reads. Everything downstream — the INSERT
+ * builder, its escaping, the dialect picker, the output panel — is identical,
+ * so the two tools share one component parameterized by this, the same shape
+ * as `DiffTool`'s `mode` prop rather than a second near-identical file.
+ */
+export type SqlInsertSource = "csv" | "json";
+
+const SOURCE: Record<
+  SqlInsertSource,
+  { accept: string; label: string; replaceLabel: string; hint: string; toolSlug: string; readError: string; buildError: string; parse: (file: File) => Promise<NormalizedTable> }
+> = {
+  csv: {
+    accept: ".csv",
+    label: "Drop a .csv file here",
+    replaceLabel: "Drop a different CSV file",
+    hint: "Nothing is uploaded — conversion happens entirely on your device.",
+    toolSlug: "csv-to-sql",
+    readError: "Could not read this CSV file.",
+    buildError: "Could not build INSERT statements from this CSV.",
+    parse: parseCsvFile,
+  },
+  json: {
+    accept: ".json",
+    label: "Drop a .json file here",
+    replaceLabel: "Drop a different JSON file",
+    hint: "Nothing is uploaded — conversion happens entirely on your device.",
+    toolSlug: "json-to-sql-insert",
+    readError: "Could not read this JSON file.",
+    buildError: "Could not build INSERT statements from this JSON.",
+    parse: parseJsonFile,
+  },
+};
+
+export function CsvToSqlTool({ source = "csv" }: { source?: SqlInsertSource } = {}) {
+  const config = SOURCE[source];
   const [file, setFile] = useState<File | null>(null);
   const [state, setState] = useState<ToolState>({ status: "idle" });
   const [table, setTable] = useState<NormalizedTable | null>(null);
@@ -56,11 +91,11 @@ export function CsvToSqlTool() {
 
     setState({ status: "reading" });
     try {
-      const parsed = await parseCsvFile(selected);
+      const parsed = await config.parse(selected);
       setTable(parsed);
       setState({ status: "ready" });
     } catch (cause) {
-      setState({ status: "error", ...errorFrom(cause, "Could not read this CSV file.") });
+      setState({ status: "error", ...errorFrom(cause, config.readError) });
     }
   }
 
@@ -72,7 +107,7 @@ export function CsvToSqlTool() {
       setOutput(result.output);
       setWarnings(result.warnings);
     } catch (cause) {
-      setState({ status: "error", ...errorFrom(cause, "Could not build INSERT statements from this CSV.") });
+      setState({ status: "error", ...errorFrom(cause, config.buildError) });
     } finally {
       setIsConverting(false);
     }
@@ -89,16 +124,16 @@ export function CsvToSqlTool() {
   return (
     <div className="flex flex-col gap-4">
       <FileDropZone
-        label={file ? "Drop a different CSV file" : "Drop a .csv file here"}
-        hint="Nothing is uploaded — conversion happens entirely on your device."
-        accept=".csv"
+        label={file ? config.replaceLabel : config.label}
+        hint={config.hint}
+        accept={config.accept}
         onFilesSelected={handleFilesSelected}
-        toolSlug="csv-to-sql"
+        toolSlug={config.toolSlug}
       />
 
       {file && (
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <FileInfo file={file} detectedFormat="csv" />
+          <FileInfo file={file} detectedFormat={source} />
           <button
             type="button"
             onClick={handleClear}

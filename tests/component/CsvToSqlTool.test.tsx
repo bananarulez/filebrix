@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { CsvToSqlTool } from "@/components/dev-tools/CsvToSqlTool";
-import { parseCsvFile } from "@/engines/spreadsheet";
+import { parseCsvFile, parseJsonFile } from "@/engines/spreadsheet";
 import { buildInsertStatements } from "@/engines/developer/sql/csvToInsert";
 import { ProcessingError } from "@/lib/errors/ProcessingError";
 
 vi.mock("@/engines/spreadsheet", () => ({
   parseCsvFile: vi.fn(),
+  // Needed even by the CSV-only tests: the component's SOURCE map references
+  // both parsers at module scope, so an incomplete mock fails at import.
+  parseJsonFile: vi.fn(),
 }));
 
 vi.mock("@/engines/developer/sql/csvToInsert", async () => {
@@ -17,6 +20,7 @@ vi.mock("@/engines/developer/sql/csvToInsert", async () => {
 });
 
 const mockedParseCsv = vi.mocked(parseCsvFile);
+const mockedParseJson = vi.mocked(parseJsonFile);
 const mockedBuild = vi.mocked(buildInsertStatements);
 
 function selectFile(file: File) {
@@ -71,5 +75,30 @@ describe("CsvToSqlTool", () => {
     render(<CsvToSqlTool />);
     selectFile(new File(["garbage"], "bad.csv"));
     await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+  });
+
+  it("reads JSON through the same builder when source is json", async () => {
+    // The two tools differ only in which parser runs; everything downstream —
+    // escaping, dialect, output panel — is shared, so this checks the swap
+    // rather than re-testing the builder.
+    mockedParseJson.mockResolvedValue({
+      columns: ["id", "email"],
+      rows: [[7, "a@b.test"]],
+      warnings: [],
+    });
+    mockedBuild.mockReturnValue({
+      output: `INSERT INTO "users" ("id", "email") VALUES (7, 'a@b.test');`,
+      warnings: [],
+    });
+
+    render(<CsvToSqlTool source="json" />);
+    selectFile(new File(['[{"id":7,"email":"a@b.test"}]'], "users.json"));
+
+    await waitFor(() => expect(screen.getByDisplayValue("users")).toBeInTheDocument());
+    expect(mockedParseJson).toHaveBeenCalled();
+    expect(mockedParseCsv).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /build insert statements/i }));
+    await waitFor(() => expect(screen.getByText(/INSERT INTO/)).toBeInTheDocument());
   });
 });

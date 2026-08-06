@@ -186,12 +186,18 @@ function formatCellForDisplay(value: CellValue): string | number | null {
  * every other value mounts one of the nine paste-first JSON/XML/YAML tools
  * via `StructuredTextTool`, whose ids are those tools' own registry slugs.
  */
-export type DataEditAction = "table" | "json-formatter" | "json-minifier" | "xml-formatter";
-export type DataAnalyzeAction = "table" | "json-validator" | "xml-validator";
+export type DataEditAction = "table" | "json-formatter" | "json-minifier" | "xml-formatter" | "yaml-formatter";
+export type DataAnalyzeAction = "table" | "json-validator" | "xml-validator" | "yaml-validator";
 export type DataConvertAction = "table" | "json-to-xml" | "xml-to-json" | "json-to-yaml" | "yaml-to-json";
 
-const EDIT_ACTIONS: DataEditAction[] = ["table", "json-formatter", "json-minifier", "xml-formatter"];
-const ANALYZE_ACTIONS: DataAnalyzeAction[] = ["table", "json-validator", "xml-validator"];
+const EDIT_ACTIONS: DataEditAction[] = [
+  "table",
+  "json-formatter",
+  "json-minifier",
+  "xml-formatter",
+  "yaml-formatter"
+];
+const ANALYZE_ACTIONS: DataAnalyzeAction[] = ["table", "json-validator", "xml-validator", "yaml-validator"];
 const CONVERT_ACTIONS: DataConvertAction[] = [
   "table",
   "json-to-xml",

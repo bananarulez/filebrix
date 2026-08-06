@@ -1,5 +1,6 @@
-import { load } from "js-yaml";
+import { dump, load } from "js-yaml";
 import { ProcessingError } from "@/lib/errors/ProcessingError";
+import type { FormatResult } from "./json";
 
 /**
  * js-yaml's `load()` is safe by default in the installed version (5.x) — its tag set
@@ -25,4 +26,28 @@ export function parseYamlOrThrow(text: string): unknown {
     const message = cause instanceof Error ? cause.message : "Invalid YAML.";
     throw new ProcessingError("MALFORMED_FILE", `This isn't valid YAML: ${message}`);
   }
+}
+
+/**
+ * Re-emits the document with consistent indentation and key order preserved.
+ *
+ * `noRefs: true` is the load-bearing option, not a stylistic one: js-yaml
+ * otherwise replaces a value it has already emitted with an anchor/alias
+ * (`&ref_0` / `*ref_0`) whenever the same object appears twice. That's valid
+ * YAML and round-trips correctly, but a *formatter* that introduces anchors
+ * into a document that had none produces something the author didn't
+ * recognise, which is the opposite of what tidying is for.
+ *
+ * `lineWidth: -1` disables js-yaml's default 80-column wrapping for the same
+ * reason — folding a long string across lines is a rewrite, not formatting.
+ */
+export function formatYaml(text: string, indent: number = 2): FormatResult {
+  const value = parseYamlOrThrow(text);
+  return { output: dump(value, { indent, noRefs: true, lineWidth: -1 }) };
+}
+
+/** The thrown ProcessingError from parseYamlOrThrow *is* the validation failure — this only supplies the positive-confirmation message, mirroring validateJsonText/validateXmlText. */
+export function validateYamlText(text: string): FormatResult {
+  parseYamlOrThrow(text);
+  return { output: "This YAML is valid." };
 }

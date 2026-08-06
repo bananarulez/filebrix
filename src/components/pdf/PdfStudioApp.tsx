@@ -8,13 +8,15 @@ import { ActionPicker } from "@/components/app-shell/ActionPicker";
 import { PdfPageWorkspaceTool, TOOL_SLUG_BY_MODE, type WorkspaceMode } from "./PdfPageWorkspaceTool";
 import { PdfSplitTool } from "./PdfSplitTool";
 import { PdfMetadataTool } from "./PdfMetadataTool";
+import { PdfStampTool } from "./PdfStampTool";
 import { ImagesToPdfTool } from "./ImagesToPdfTool";
 import { PdfToImagesTool } from "./PdfToImagesTool";
 import { PdfToTextTool } from "./PdfToTextTool";
 import { PdfViewerTool } from "./PdfViewerTool";
 import { PdfFilePanel, PdfWorkspace, usePdfWorkspace } from "./PdfWorkspace";
 
-export type PdfStudioTab = "view" | "pages" | "convert" | "metadata";
+export type PdfStudioTab = "view" | "pages" | "edit" | "convert" | "metadata";
+export type EditAction = "watermark" | "page-numbers";
 export type PagesAction = WorkspaceMode | "split";
 export type ConvertTool = "images-to-pdf" | "pdf-to-images" | "pdf-to-txt";
 export type MetadataMode = "view" | "remove";
@@ -25,6 +27,8 @@ interface PdfStudioAppProps {
    * /pdf/{merge,split,extract-pages,delete-pages,reorder-pages,rotate} URL so its
    * SEO promise stays true. The top-level tab bar stays switchable regardless. */
   lockedPagesAction?: PagesAction;
+  /** Hides the Edit action picker — used by /pdf/watermark-pdf and /pdf/add-page-numbers-to-pdf. */
+  lockedEditAction?: EditAction;
   /** Hides the Metadata view/remove picker — used by metadata-viewer/remove-metadata. */
   lockedMetadataMode?: MetadataMode;
   /** Hides the Convert tool picker — used by images-to-pdf/pdf-to-images/pdf-to-txt. */
@@ -34,11 +38,17 @@ interface PdfStudioAppProps {
 const TAB_OPTIONS: ToolbarModeOption<PdfStudioTab>[] = [
   { id: "view", label: "View" },
   { id: "pages", label: "Pages" },
+  { id: "edit", label: "Edit" },
   { id: "convert", label: "Convert" },
   { id: "metadata", label: "Metadata" },
 ];
 
 const PAGES_ACTIONS: PagesAction[] = ["merge", "split", "extract", "delete", "reorder", "rotate"];
+const EDIT_ACTIONS: EditAction[] = ["watermark", "page-numbers"];
+const EDIT_ACTION_LABEL: Record<EditAction, string> = {
+  watermark: "Watermark",
+  "page-numbers": "Page numbers",
+};
 const PAGES_ACTION_LABEL: Record<PagesAction, string> = {
   merge: "Merge",
   split: "Split",
@@ -76,10 +86,12 @@ function actionNeedsPdf(tab: PdfStudioTab, convertTool: ConvertTool): boolean {
 function activeToolSlug(
   tab: PdfStudioTab,
   pagesAction: PagesAction,
+  editAction: EditAction,
   convertTool: ConvertTool,
   metadataMode: MetadataMode
 ): string | undefined {
   if (tab === "pages") return pagesAction === "split" ? "split" : TOOL_SLUG_BY_MODE[pagesAction];
+  if (tab === "edit") return editAction === "watermark" ? "watermark" : "page-numbers";
   if (tab === "convert") return convertTool;
   if (tab === "metadata") return metadataMode === "view" ? "metadata-viewer" : "remove-metadata";
   // View has no standalone tool page of its own.
@@ -115,16 +127,19 @@ export function PdfStudioApp(props: PdfStudioAppProps) {
 function PdfStudioBody({
   initialTab = "view",
   lockedPagesAction,
+  lockedEditAction,
   lockedMetadataMode,
   lockedConvertTool,
 }: PdfStudioAppProps) {
   const { documentKey } = usePdfWorkspace();
   const [tab, setTab] = useState<PdfStudioTab>(initialTab);
   const [pagesAction, setPagesAction] = useState<PagesAction>(lockedPagesAction ?? "merge");
+  const [editAction, setEditAction] = useState<EditAction>(lockedEditAction ?? "watermark");
   const [convertTool, setConvertTool] = useState<ConvertTool>(lockedConvertTool ?? "images-to-pdf");
   const [metadataMode, setMetadataMode] = useState<MetadataMode>(lockedMetadataMode ?? "view");
 
   const activePagesAction = lockedPagesAction ?? pagesAction;
+  const activeEditAction = lockedEditAction ?? editAction;
   const activeConvertTool = lockedConvertTool ?? convertTool;
   const activeMetadataMode = lockedMetadataMode ?? metadataMode;
 
@@ -139,6 +154,14 @@ function PdfStudioBody({
             labels={PAGES_ACTION_LABEL}
             active={activePagesAction}
             onChange={setPagesAction}
+          />
+        )}
+        {tab === "edit" && !lockedEditAction && (
+          <ActionPicker
+            options={EDIT_ACTIONS}
+            labels={EDIT_ACTION_LABEL}
+            active={activeEditAction}
+            onChange={setEditAction}
           />
         )}
         {tab === "convert" && !lockedConvertTool && (
@@ -163,7 +186,7 @@ function PdfStudioBody({
             // Merge is the one action that takes several PDFs and appends
             // them rather than replacing what's loaded.
             multiple={tab === "pages" && activePagesAction === "merge"}
-            toolSlug={activeToolSlug(tab, activePagesAction, activeConvertTool, activeMetadataMode)}
+            toolSlug={activeToolSlug(tab, activePagesAction, activeEditAction, activeConvertTool, activeMetadataMode)}
           />
         )}
 
@@ -183,6 +206,8 @@ function PdfStudioBody({
             {activeConvertTool === "pdf-to-txt" && <PdfToTextTool key={`pdf-to-txt-${documentKey}`} />}
           </>
         )}
+
+        {tab === "edit" && <PdfStampTool key={`${activeEditAction}-${documentKey}`} mode={activeEditAction} />}
 
         {tab === "metadata" && (
           <PdfMetadataTool key={`${activeMetadataMode}-${documentKey}`} mode={activeMetadataMode} />

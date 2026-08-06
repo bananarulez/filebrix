@@ -15,7 +15,7 @@ export const csvToSqlInsertTool: ToolDefinition = {
   keywords: ["csv to sql", "csv to sql insert", "convert csv to sql statements", "generate insert statements from csv"],
   acceptedFileTypes: ["csv"],
   outputFileTypes: ["sql"],
-  relatedTools: ["sql-formatter", "csv-to-json", "csv-viewer"],
+  relatedTools: ["sql-formatter", "csv-to-json", "csv-viewer", "json-to-sql-insert"],
   seo: {
     title: "CSV to SQL INSERT Converter — Free, Private & No Upload",
     description:

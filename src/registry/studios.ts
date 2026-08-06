@@ -125,6 +125,12 @@ export const STUDIOS: StudioDefinition[] = [
           "Merge, split, rotate, reorder, extract and delete PDF pages in your browser. Every page operation runs locally — your document is never uploaded.",
       },
       {
+        id: "edit",
+        label: "Edit",
+        indexDescription:
+          "Stamp a watermark or page numbers onto every page of a PDF in your browser. The text is drawn on your device — the document is never uploaded.",
+      },
+      {
         id: "convert",
         label: "Convert",
         indexDescription:

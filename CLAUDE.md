@@ -515,6 +515,66 @@ on the same run and both worth recognising before writing the next one.
   accessible names collide by prefix ("Brightness" / "Brightness value"), so
   `getByLabel` queries for either need `{ exact: true }`.
 
+**A capability that works in a Studio but has no URL is invisible.** This has
+now been the finding of two separate reviews (geo's Bounding Box/Centroid/
+Convex Hull, then Image Studio's Crop/Brightness/Contrast/Grayscale/Watermark
+and nine Data Studio format pairs), so treat it as a standing check rather
+than a discovery: **when you add an action to a Studio, decide explicitly
+whether it earns a `ToolDefinition`.** It does when someone would search for
+it by name. It doesn't for a viewer or an in-app-only affordance. What isn't
+acceptable is leaving finished work reachable only by people who already know
+the Studio exists. The counter-pressure is equally real: generating every
+mechanically-possible variant (Data Studio's Converter can do 56 ordered
+format pairs) is the doorway-page pattern, so the answer is a curated subset
+with genuine query intent behind each one, not "all of them" and not "none".
+
+**Developer Toolkit is not a Studio — that's about structure, not depth.**
+Its hub page carries the same three Application-level signals every Studio
+page does: a visible FAQ, `LocalProcessingBadge`, and `SoftwareApplication` +
+`FAQPage` JSON-LD (`DEVELOPER_TOOLKIT_FAQ` lives in
+`registry/devCategories.ts`, the registry counterpart to a Studio's `faq`).
+It emits `SoftwareApplication`, **not** `CollectionPage` — it's an
+Application page like `/pdf-studio`; the `CollectionPage`/`ItemList` shape
+belongs to the index pages one level down, and emitting both would claim two
+page types for one URL. Each category card lists every tool in it as a link,
+because a hub that names none of the tools it leads to gives a visitor no way
+to tell whether what they want is there.
+
+**Text drawn onto a PDF page must account for `/Rotate`.**
+`engines/pdf/structural/stamp.ts` backs both Watermark PDF and page
+numbering. Content coordinates are in unrotated page space while the viewer
+turns the page, so a stamp placed "bottom-right" on a rotated page lands
+somewhere else entirely — and **every assertion about the output document
+still passes**, which is why `visibleToUnrotated`/`visibleSize` are exported
+purely to be unit-tested against their four known corner mappings. The output
+uses the 14 standard PDF fonts (no embedded font file, so the file stays
+small); the cost is Latin-1 only, and `assertEncodable` rejects text outside
+it with a reason rather than handing back a partially-stamped document.
+
+**"I couldn't find the string in the file" is not evidence it isn't in the
+document.** Verifying the PDF stamp reported a false failure twice: pdf-lib
+packs objects into object streams on `save()`, and content streams stay
+Flate-compressed even with `useObjectStreams: false`. The check that answers
+the question is running the output back through the site's own PDF-to-Text
+tool (real pdf.js). Applies to any format that compresses.
+
+**A user-supplied regex needs its zero-length match handled.**
+`engines/developer/regex.ts` advances `lastIndex` past an empty match,
+because `exec` doesn't — a pattern like `a*` or `\b` otherwise returns the
+same match at the same offset forever and takes the tab with it. Its test
+asserts a specific finite result, not merely that the call returned: a test
+that hangs looks identical to a slow one. Matching is also capped at 1000 and
+reports `truncated`, and the page states plainly that catastrophic
+backtracking can still freeze the tab, since `RegExp.exec` cannot be
+interrupted once started.
+
+**The JWT decoder never asks for a signing secret**, and that is the feature.
+Verifying a signature requires the secret or the issuer's public key, and a
+web page prompting for one teaches a habit worth not building whatever it
+promises to do with it. A decoder that stays a decoder can honestly claim to
+be safe; the UI says "decoded, not verified" permanently, the way the Hash
+Generator's password warning is permanent.
+
 **"Fit" is a mode; 100% still means 1:1.** `ImageViewerTool` opens on
 fit — the image scaled down to its frame, never up — and its readout says
 `Fit · 26%` rather than pretending that scale is 100%. Redefining 100% as
@@ -854,8 +914,8 @@ error message pointing at the cause.
 
 ## Current status
 
-Foundation, plus six engines and **89 tools** — Developer 25, Spreadsheet
-17, Geospatial 22, Image 13, PDF 11, Parquet 1 (`registry/tools/` has one
+Foundation, plus six engines and **110 tools** — Developer 28, Spreadsheet
+25, Geospatial 22, Image 18, PDF 13, Parquet 4 (`registry/tools/` has one
 file per tool, so `ls | wc -l` is the count; keep this line honest when you
 add one) — registry, worker infra, file
 detection, SEO/analytics/security/error abstractions, shared UI components,

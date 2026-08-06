@@ -321,8 +321,31 @@ test.describe("PDF Studio hub (/pdf-studio)", () => {
     // removed rather than left showing "not available yet" forever.
     await page.goto("/pdf-studio");
     await expect(page.getByRole("tab", { name: "Security", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("tab")).toHaveCount(4);
+    // View / Pages / Edit / Convert / Metadata. Edit joined when Watermark and
+    // page numbering shipped (PROJECT_LOG entry 53) — the count is asserted so
+    // a tab can't reappear unnoticed, which is the point of this test.
+    await expect(page.getByRole("tab")).toHaveCount(5);
     await expect(page.getByText(/isn.t available yet/i)).toHaveCount(0);
+  });
+
+  test("the Edit tab stamps a watermark and page numbers, and neither is a placeholder", async ({
+    page,
+  }) => {
+    await page.goto("/pdf-studio");
+    await page.getByRole("tab", { name: "Edit", exact: true }).click();
+    await expect(page.getByRole("radio", { name: "Watermark", exact: true })).toBeVisible();
+    await expect(page.getByRole("radio", { name: "Page numbers", exact: true })).toBeVisible();
+
+    await page.locator('input[type="file"]').first().setInputFiles(fixture("multi-page.pdf"));
+    await expect(page.getByRole("button", { name: /add watermark/i })).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("button", { name: /add watermark/i }).click();
+    await expect(page.getByRole("button", { name: /^download/i })).toBeVisible({ timeout: 30_000 });
+
+    await page.getByRole("radio", { name: "Page numbers", exact: true }).click();
+    const numberButton = page.getByRole("button", { name: /number \d+ page/i });
+    await expect(numberButton).toBeVisible({ timeout: 20_000 });
+    await numberButton.click();
+    await expect(page.getByRole("button", { name: /^download/i })).toBeVisible({ timeout: 30_000 });
   });
 
   test("a locked tool page (/pdf/rotate) hides the Pages action picker but keeps the top-level tabs switchable", async ({
