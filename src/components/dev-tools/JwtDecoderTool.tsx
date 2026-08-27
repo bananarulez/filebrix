@@ -74,7 +74,8 @@ export function JwtDecoderTool() {
       </label>
 
       <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
-        <strong>Decoded, not verified.</strong> A JWT&rsquo;s payload is only base64 — anyone holding the
+        <strong>Decoded, not verified.</strong>{" "}
+        A JWT&rsquo;s payload is only base64 — anyone holding the
         token can read it, and anyone can craft one. Nothing here proves the token is genuine, because
         checking that needs the signing key, which this page deliberately never asks for.
       </p>

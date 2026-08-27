@@ -7,6 +7,7 @@ import { LocalProcessingBadge } from "@/components/tools/LocalProcessingBadge";
 import { ToolInstructions } from "@/components/tools/ToolInstructions";
 import { FAQ } from "@/components/tools/FAQ";
 import { RelatedTools } from "@/components/tools/RelatedTools";
+import { ToolArticle } from "@/components/tool-page/ToolArticle";
 import { AdSlot } from "@/components/tools/AdSlot";
 import { Breadcrumbs } from "@/components/seo/Breadcrumbs";
 import { PageContainer, ProseContainer } from "@/components/layout/PageContainer";
@@ -17,6 +18,12 @@ interface ToolPageLayoutProps {
   children: ReactNode;
   /** Numbered steps for the "How it works" section. */
   steps: string[];
+  /**
+   * Optional long-form reference content, rendered between "How it works"
+   * and the FAQ. Only the few pages whose visitors arrive with a real
+   * question ("why is my JSON invalid?") have one — see `ToolArticle`.
+   */
+  article?: ReactNode;
   /** Overridable for tests; defaults to the real registry. */
   toolList?: ToolDefinition[];
 }
@@ -33,7 +40,7 @@ interface ToolPageLayoutProps {
  * which would make that one tool's page inconsistent with every other page
  * on the site.
  */
-export function ToolPageLayout({ tool, children, steps, toolList }: ToolPageLayoutProps) {
+export function ToolPageLayout({ tool, children, steps, article, toolList }: ToolPageLayoutProps) {
   const related = getRelatedTools(tool, toolList);
   // Ownership via the shared resolver, not a direct CATEGORIES engine match:
   // Parquet Viewer belongs to Data Studio through STUDIOS[].relatedEngines
@@ -78,6 +85,8 @@ export function ToolPageLayout({ tool, children, steps, toolList }: ToolPageLayo
       <AdSlot placement="below-tool" />
 
       <ToolInstructions steps={steps} />
+
+      {article && <ToolArticle>{article}</ToolArticle>}
 
       <FAQ items={tool.faq ?? []} />
 

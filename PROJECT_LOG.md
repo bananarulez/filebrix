@@ -4694,3 +4694,95 @@ in the document**, for any format that compresses.
 export build of 142 routes (up from 120), bundle budget passed with the shared
 chunk unchanged at 181.5 KB, and the two PDF tools driven end to end in a real
 browser including a rotated page.
+
+## 54. What people actually search for, and the five words every title wasted
+
+Four weeks of Search Console data arrived: 2,430 impressions, 1 click, average
+position 71.2. Impressions climbed to a peak on 13 August and fell to zero by
+the 17th. The reading offered was "no clicks at position 70, so Google stopped
+showing it."
+
+That isn't what happened, and the difference matters because it points at
+different work. At position 71 nobody sees the result — Google expects ~0% CTR
+there and doesn't demote for it. The curve is the ordinary trajectory of a
+three-week-old domain: discovery, evaluation, then settling to whatever
+authority the site actually has. Technical checks confirmed nothing was broken
+(canonical, `og:url`, no `noindex`, no `X-Robots-Tag`, `robots.txt`,
+`sitemap.xml`, 200 over HTTPS — all correct), and 135 of 140 pages were
+indexed. The site is findable. It just doesn't rank.
+
+### The demand is not where the tools are
+
+Grouping all 500 queries by theme:
+
+| theme | impressions | share |
+| --- | --- | --- |
+| JSON validation | 460 | 32.8% |
+| JSON ⇄ Excel | 320 | 22.8% |
+| Images | 208 | 14.8% |
+| Excel/CSV | 164 | 11.7% |
+| YAML | 97 | 6.9% |
+| Geospatial | 61 | 4.4% |
+| **PDF** | **1** | **0.1%** |
+
+PDF Studio — 13 tools, a viewer, text search, a page workspace — produced one
+impression in 28 days. JSON alone produced 56%. That is worth knowing before
+building the next feature, and it is the opposite of where effort had gone.
+
+### The privacy angle is a conversion argument, not an acquisition one
+
+Every one of the 139 tool pages ended its title with `— Free, Private & No
+Upload`. Queries carrying that intent, in the whole dataset:
+
+```
+safest file converter          1
+json to csv offline            1
+jpg to webp converter offline  1
+```
+
+Three impressions out of 1,402. Five words of the most valuable text a page
+has, spent on a phrase nobody searches, repeated 139 times — which also reads
+as a template. The claim still belongs on the page and in the description,
+where it wins the click and the trust; it does not belong in the position that
+should carry the term someone typed.
+
+### What changed
+
+Four pages, chosen by impressions: `json-validator` (460), `json-to-excel` and
+`excel-to-json` (320 between them), `yaml-formatter` (97). Titles now lead with
+the searched term. Each gained a `ToolArticle` — long-form reference content
+answering the question the query implies, since these are diagnostic searches
+("json checker", "json verify"): someone already has a file that won't work.
+
+- **JSON Validator** — the eight things that actually break JSON, how to read
+  a parser's position (which is where parsing *stopped*, not where the mistake
+  is), why syntax-valid isn't correct (duplicate keys, integers past 2⁵³), and
+  why JSONC/JSON5 files fail here.
+- **JSON to Excel** — which JSON is grid-shaped and which isn't, the wrapped
+  API-response case, flattening, and why dates are written as text rather than
+  guessed at.
+- **Excel to JSON** — Excel dates are day-counts from 1900 with a deliberate
+  Lotus leap-year bug, formulas arrive as cached values, merged cells hold one
+  value, and leading zeros were lost before the file arrived.
+- **YAML Formatter** — the Norway problem (`NO` → `false`), tabs being
+  forbidden rather than discouraged, and why comments cannot survive a
+  parse-and-re-emit.
+
+`ToolArticle` is deliberately opt-in and used by four pages out of 139. Padding
+the rest would produce exactly the thin templated bulk the change exists to
+move away from.
+
+### A shipped bug the rebuild surfaced
+
+`tests/unit/renderedText.test.ts` runs against `out/`, and `out/` was three
+weeks stale, so the suite had been passing on old output. A clean build failed
+it: `JwtDecoderTool` rendered `verified.A JWT's payload` — the JSX space
+between `</strong>` and the following text dropped at build time, live on the
+site. Exactly the class of bug that test was written for (entry 46), caught
+only because something forced a rebuild. Two of the new pages then hit it too
+(`</code>s`, `</code>and`) and needed the same `{" "}` fix.
+
+**A test that reads build output is only as fresh as the build.** Locally
+nothing forces one; CI builds first, which is why CI would have caught this and
+a local run didn't.
+
