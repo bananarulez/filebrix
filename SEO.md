@@ -18,7 +18,7 @@ whenever an item ships or new Search Console data arrives.
 | Where the impressions are | JSON validation 33%, JSON⇄Excel 23%, images 15%, Excel/CSV 12%, YAML 7%, geo 4%, **PDF 0.1%** |
 | Off-page work (backlinks, launches, directories) | **None done yet** |
 | Bing Webmaster Tools | **Set up** (data from ~6 Aug 2026). To 2026-10-16: 58 impressions, 2 clicks. Unlike Google, impressions keep trickling in at 1–5/day and haven't dropped to 0 |
-| IndexNow (Cloudflare Crawler Hints) | Not set up |
+| Sitemaps | Submitted in Search Console and Bing (Bing: 140 URLs discovered, 0 errors). IndexNow deliberately skipped |
 | GitHub repo | `github.com/bananarulez/filebrix`, **public since 2026-10-16**, AGPL-3.0-only (`LICENSE`). Description, website and topics set. Commits carry the GitHub no-reply address. Linked from the footer, About and Privacy pages and the homepage `Organization.sameAs` (deployed as version `cb20e486`) |
 
 **The diagnosis.** Technical SEO is essentially finished and verified. Pages
@@ -149,9 +149,11 @@ Statuses: `[ ]` not started · `[~]` in progress · `[x]` done (add the date).
 
 - [x] **Bing Webmaster Tools** (set up around 6 Aug 2026). Bing's index also
       feeds DuckDuckGo, Ecosia, Yahoo and ChatGPT search.
-- [ ] **IndexNow**: turn on Cloudflare **Crawler Hints** (Caching →
-      Configuration), which pings IndexNow automatically when content changes.
-      No code needed.
+- [—] **IndexNow: skipped (2026-10-16).** The sitemap is submitted in both
+      Search Console and Bing Webmaster Tools, and Bing has discovered all 140
+      URLs, so IndexNow would only speed up recrawls of changed pages. Other
+      IndexNow engines (Seznam, Yandex) don't matter for an English-only site.
+      Revisit if Bing is slow to pick up a batch of title changes.
 - [x] **Publish the source code on GitHub** (2026-10-16) (or at least the engine and
       worker code) and fill `SITE_CONFIG.links.github`. For a "your files
       never leave your device" claim, verifiable code is the strongest trust
