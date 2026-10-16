@@ -19,7 +19,7 @@ whenever an item ships or new Search Console data arrives.
 | Off-page work (backlinks, launches, directories) | **None done yet** |
 | Bing Webmaster Tools | **Set up** (data from ~6 Aug 2026). To 2026-10-16: 58 impressions, 2 clicks. Unlike Google, impressions keep trickling in at 1–5/day and haven't dropped to 0 |
 | IndexNow (Cloudflare Crawler Hints) | Not set up |
-| GitHub repo | `github.com/bananarulez/filebrix`, **still private** (recreated 2026-10-16 with commit emails rewritten to the GitHub no-reply address). No secrets in history. **No license, on purpose**: source-available, all rights reserved, stated in `README.md`. Switch to AGPL-3.0 if a list or community requires open source. `SITE_CONFIG.links.github` is set, so **don't deploy until the repo is public**, or the footer/About/Privacy links 404 |
+| GitHub repo | `github.com/bananarulez/filebrix`, **still private** (recreated 2026-10-16 with commit emails rewritten to the GitHub no-reply address). No secrets in history. Licensed **AGPL-3.0-only** (`LICENSE`), so it counts as open source for awesome lists, directories and AlternativeTo. `SITE_CONFIG.links.github` is set, so **don't deploy until the repo is public**, or the footer/About/Privacy links 404 |
 
 **The diagnosis.** Technical SEO is essentially finished and verified. Pages
 are findable and indexed, but they rank around position 70 because the

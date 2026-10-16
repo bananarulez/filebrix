@@ -77,9 +77,14 @@ Contributor documentation: [`README.txt`](README.txt) is the product spec,
 
 ## License
 
-Copyright © 2026 FileBrix. All rights reserved.
+Copyright © 2026 the FileBrix authors.
 
-The source is published so that anyone can read and verify it. It is **not**
-licensed for reuse, redistribution or hosting elsewhere. Bug reports and
-security reports are welcome: security@filebrix.com, or info@filebrix.com
-for anything else.
+Licensed under the **GNU Affero General Public License v3.0**; see
+[`LICENSE`](LICENSE). You may use, modify and redistribute this code, but if
+you run a modified version as a service people use over a network, you must
+publish your complete source under the same license.
+
+The FileBrix name and the filebrix.com domain are not covered by the license.
+
+Bug reports are welcome at info@filebrix.com, and security reports at
+security@filebrix.com.
