@@ -1,36 +1,85 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FileBrix
 
-## Getting Started
+**Free file tools that never upload your files.** → [filebrix.com](https://filebrix.com)
 
-First, run the development server:
+Convert, view and edit PDFs, images, spreadsheets, Parquet, GeoJSON and other
+data files directly in your browser. 110 tools, no account, no upload: every
+file is processed on your own device, by JavaScript and WebAssembly running in
+the page.
+
+| Application | What it does |
+| --- | --- |
+| [Data Studio](https://filebrix.com/data-studio) | CSV, Excel, JSON, XML, YAML and Parquet: view, edit, validate and convert between them |
+| [PDF Studio](https://filebrix.com/pdf-studio) | Merge, split, rotate, reorder, watermark, number pages, PDF ⇄ images, PDF to text, metadata |
+| [Image Studio](https://filebrix.com/image-studio) | Convert PNG/JPG/WebP/SVG, resize, compress, crop, adjust, watermark, view and strip EXIF |
+| [Geospatial Studio](https://filebrix.com/geospatial-studio) | GeoJSON, KML/KMZ, GPX, Shapefile and TopoJSON: view on a map, validate, simplify, buffer, reproject (8,000+ EPSG systems) |
+| [Developer Toolkit](https://filebrix.com/developer-tools) | Text diff, regex tester, JWT decoder, hashes, Base64/URL/HTML encoding, SQL formatting and more |
+
+## Why this repository is public
+
+The site's one promise is that **your files never leave your device**. You
+shouldn't have to take that on trust, so the code is here to check:
+
+- **There is no server that could receive a file.** The site is a static
+  export served from Cloudflare's edge. There are no API routes and no
+  backend.
+- **The browser itself enforces it.** The Content-Security-Policy in
+  [`public/_headers`](public/_headers) sets `connect-src 'self'`, so even a bug
+  that tried to send a file somewhere would be blocked by the browser.
+- **Tests assert it.** The end-to-end suites in [`tests/e2e/`](tests/e2e/) run
+  the tools in a real browser and record every request that leaves the site.
+  A tool run that produces one fails the test.
+  [`privacy-audit.spec.ts`](tests/e2e/privacy-audit.spec.ts) also checks that
+  GPS coordinates read from a photo are shown on screen and never
+  transmitted.
+- **The one exception is documented.** Map views load basemap tile images
+  from CARTO. Those requests contain only tile coordinates (zoom/x/y), never
+  your geometry. [`PRIVACY_ARCHITECTURE.md`](PRIVACY_ARCHITECTURE.md) lists
+  every network request the site can make and every third-party library it
+  uses.
+
+**Check it yourself on the live site:** open your browser's developer tools,
+switch to the Network tab, and use any tool. You'll see the page's own assets
+load, and no request carrying your file.
+
+## How it works
+
+Everything runs client-side, mostly in Web Workers so large files don't
+freeze the page:
+
+- **PDF:** [pdf-lib](https://pdf-lib.js.org/) for page operations,
+  [pdf.js](https://mozilla.github.io/pdf.js/) for rendering and text
+  extraction.
+- **Images:** the browser's own Canvas / `OffscreenCanvas` pipeline, with no
+  image library at all.
+- **Spreadsheets and data:** Papa Parse, SheetJS and js-yaml, plus the
+  browser's native XML parser.
+- **Parquet:** [DuckDB-WASM](https://duckdb.org/docs/api/wasm/overview),
+  a full SQL database running in the tab.
+- **Maps and GIS:** MapLibre GL, Turf and proj4.
+- **Framework:** Next.js, statically exported. Each heavy library is
+  downloaded only when you first use a tool that needs it.
+
+## Running it locally
+
+Requires Node.js 20+.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev          # http://localhost:3000
+npm run test         # unit and component tests (Vitest)
+npm run test:e2e     # end-to-end tests (Playwright)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Contributor documentation: [`README.txt`](README.txt) is the product spec,
+[`CLAUDE.md`](CLAUDE.md) the engineering rules, and
+[`PROJECT_LOG.md`](PROJECT_LOG.md) the history of every design decision.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## License
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Copyright © 2026 FileBrix. All rights reserved.
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The source is published so that anyone can read and verify it. It is **not**
+licensed for reuse, redistribution or hosting elsewhere. Bug reports and
+security reports are welcome: security@filebrix.com, or info@filebrix.com
+for anything else.

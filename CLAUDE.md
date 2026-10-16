@@ -8,6 +8,26 @@ requests exist, what third-party libraries can and can't do, and known
 limitations. Update it if you add a new network-capable dependency or
 change how a filename/file becomes an output.
 
+## SEO
+
+Read `SEO.md` before changing any title, description, URL, sitemap entry,
+structured data or page copy. It records what search work already exists
+(so it isn't rebuilt), the latest Search Console numbers, and a prioritised
+backlog with statuses. Update its Status and Backlog sections in the same
+commit as any SEO change. The short version:
+
+- **Technical SEO is done.** Since 17 Aug 2026 the site gets ~0 Google
+  impressions and 0 organic clicks. That isn't a penalty for not being
+  clicked. A new domain settles below page 5 once its trial ranking ends.
+  Authority (backlinks) is the bottleneck, then
+  titles and content on pages that already get impressions.
+- **A title leads with the searched term.** No `— Free, Private & No Upload`
+  suffix on new or edited titles (PROJECT_LOG entry 54).
+- **Choose work by Search Console impressions**, change titles in small dated
+  batches, and never add doorway or phrase-variant pages.
+- **Never trade privacy for SEO.** No analytics scripts, tracking pixels or
+  third-party widgets.
+
 ## Non-negotiable rules
 
 1. **Files never leave the browser.** No API route may accept file uploads

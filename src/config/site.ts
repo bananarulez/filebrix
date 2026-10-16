@@ -133,7 +133,7 @@ export const SITE_CONFIG = {
    */
   links: {
     /** Repository root, if one is ever published. Also where a "report a bug" link would point. */
-    github: null as string | null,
+    github: "https://github.com/bananarulez/filebrix" as string | null,
     /** Issue tracker. `null` means bug reports go to the general email instead. */
     issues: null as string | null,
     x: null as string | null,
