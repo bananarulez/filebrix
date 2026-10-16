@@ -19,7 +19,7 @@ whenever an item ships or new Search Console data arrives.
 | Off-page work (backlinks, launches, directories) | **None done yet** |
 | Bing Webmaster Tools | **Set up** (data from ~6 Aug 2026). To 2026-10-16: 58 impressions, 2 clicks. Unlike Google, impressions keep trickling in at 1–5/day and haven't dropped to 0 |
 | IndexNow (Cloudflare Crawler Hints) | Not set up |
-| GitHub repo | `github.com/bananarulez/filebrix`, **still private** (recreated 2026-10-16 with commit emails rewritten to the GitHub no-reply address). No secrets in history. Licensed **AGPL-3.0-only** (`LICENSE`), so it counts as open source for awesome lists, directories and AlternativeTo. `SITE_CONFIG.links.github` is set, so **don't deploy until the repo is public**, or the footer/About/Privacy links 404 |
+| GitHub repo | `github.com/bananarulez/filebrix`, **public since 2026-10-16**, AGPL-3.0-only (`LICENSE`). Description, website and topics set. Commits carry the GitHub no-reply address. Linked from the footer, About and Privacy pages and the homepage `Organization.sameAs` (deployed as version `cb20e486`) |
 
 **The diagnosis.** Technical SEO is essentially finished and verified. Pages
 are findable and indexed, but they rank around position 70 because the
@@ -152,7 +152,7 @@ Statuses: `[ ]` not started · `[~]` in progress · `[x]` done (add the date).
 - [ ] **IndexNow**: turn on Cloudflare **Crawler Hints** (Caching →
       Configuration), which pings IndexNow automatically when content changes.
       No code needed.
-- [~] **Publish the source code on GitHub** (or at least the engine and
+- [x] **Publish the source code on GitHub** (2026-10-16) (or at least the engine and
       worker code) and fill `SITE_CONFIG.links.github`. For a "your files
       never leave your device" claim, verifiable code is the strongest trust
       signal available, it gives a high-authority backlink, and the
